@@ -9,7 +9,7 @@ interface ExtensionHarness {
   userDataDir: string;
 }
 
-test("loads the extension, creates a vault, and injects the ChatGPT page switcher", async () => {
+test("loads the extension, initializes local vault, and injects the ChatGPT page switcher", async () => {
   const harness = await launchExtension();
 
   try {
@@ -17,10 +17,9 @@ test("loads the extension, creates a vault, and injects the ChatGPT page switche
     await popup.goto(`chrome-extension://${harness.extensionId}/popup.html`);
 
     await expect(popup.getByRole("heading", { name: "GPT Switch" })).toBeVisible();
-    await popup.getByLabel("保险箱口令").fill("correct horse battery");
-    await popup.getByLabel("确认口令").fill("correct horse battery");
-    await popup.getByRole("button", { name: "创建保险箱" }).click();
     await expect(popup.getByRole("button", { name: "保存当前账号" })).toBeVisible();
+    await expect(popup.getByLabel("Team Name")).toBeVisible();
+    await expect(popup.getByLabel("账号有效期")).toBeVisible();
 
     const chatPage = await harness.context.newPage();
     await chatPage.route("https://chatgpt.com/**", async (route) => {
@@ -57,9 +56,6 @@ test("shows a confirmation dialog when a workspace unavailable page is detected"
   try {
     const popup = await harness.context.newPage();
     await popup.goto(`chrome-extension://${harness.extensionId}/popup.html`);
-    await popup.getByLabel("保险箱口令").fill("correct horse battery");
-    await popup.getByLabel("确认口令").fill("correct horse battery");
-    await popup.getByRole("button", { name: "创建保险箱" }).click();
     await expect(popup.getByRole("button", { name: "保存当前账号" })).toBeVisible();
 
     const chatPage = await harness.context.newPage();

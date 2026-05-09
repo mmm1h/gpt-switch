@@ -159,12 +159,12 @@ async function renderProfileList(): Promise<void> {
   const response = await sendMessage<PublicState>({ type: "GET_STATE" });
 
   if (!response.ok || !response.data?.hasVault) {
-    panel.innerHTML = `<div class="title">GPT Switch</div><div class="hint">请先打开扩展弹窗创建保险箱。</div>`;
+    panel.innerHTML = `<div class="title">GPT Switch</div><div class="hint">请先打开扩展弹窗初始化本地数据。</div>`;
     return;
   }
 
   if (!response.data.unlocked) {
-    panel.innerHTML = `<div class="title">GPT Switch</div><div class="hint">保险箱还没解锁，先点浏览器扩展图标输口令。</div>`;
+    panel.innerHTML = `<div class="title">GPT Switch</div><div class="hint">本地数据暂不可用，请重新打开扩展弹窗。</div>`;
     return;
   }
 
@@ -180,7 +180,7 @@ async function renderProfileList(): Promise<void> {
         (profile) => `
           <div class="profile">
             <span class="dot" style="background:${escapeAttribute(profile.color)}"></span>
-            <span class="name" title="${escapeAttribute(profile.label)}">${escapeHtml(profile.label)}</span>
+            <span class="name" title="${escapeAttribute(profile.label)}">${escapeHtml(profile.label)} · ${profile.type === "workspace" ? `Team: ${escapeHtml(profile.workspaceName || "未填写")}` : "个人"}</span>
             <button class="switch" data-profile-id="${escapeAttribute(profile.id)}">切换</button>
           </div>
         `

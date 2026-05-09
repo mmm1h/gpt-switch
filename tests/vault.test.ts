@@ -9,7 +9,7 @@ import {
 
 describe("vault", () => {
   it("encrypts cookie snapshots without storing plaintext values", async () => {
-    const { key } = await createInitialState("correct horse battery");
+    const { key } = await createInitialState();
     const snapshot: CookieSnapshot = {
       capturedAt: "2026-05-09T00:00:00.000Z",
       cookies: [
@@ -37,9 +37,9 @@ describe("vault", () => {
     await expect(decryptCookieSnapshot(key, encrypted)).resolves.toEqual(snapshot);
   });
 
-  it("rejects wrong vault passwords", async () => {
-    const { state } = await createInitialState("correct horse battery");
+  it("rejects invalid local vault keys", async () => {
+    const { state } = await createInitialState();
 
-    await expect(unlockState(state, "wrong password")).rejects.toThrow();
+    await expect(unlockState({ ...state, vault: { ...state.vault, keySeed: "" } })).rejects.toThrow();
   });
 });

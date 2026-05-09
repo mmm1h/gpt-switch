@@ -6,6 +6,9 @@ export interface Profile {
   emailHint: string;
   color: string;
   type: ProfileType;
+  workspaceName?: string;
+  isPaidAccount?: boolean;
+  subscriptionExpiresAt?: string;
   isDefaultPersonal: boolean;
   capturedAt: string;
   lastUsedAt?: string;
@@ -18,8 +21,10 @@ export interface EncryptedPayload {
 }
 
 export interface VaultConfig {
-  salt: string;
-  iterations: number;
+  mode: "local";
+  keySeed: string;
+  salt?: string;
+  iterations?: number;
   verifier: EncryptedPayload;
   createdAt: string;
   updatedAt: string;
@@ -64,9 +69,6 @@ export interface PublicState {
 
 export type RuntimeMessage =
   | { type: "GET_STATE" }
-  | { type: "SETUP_VAULT"; password: string }
-  | { type: "UNLOCK_VAULT"; password: string }
-  | { type: "LOCK_VAULT" }
   | {
       type: "SAVE_CURRENT_PROFILE";
       payload: {
@@ -74,6 +76,9 @@ export type RuntimeMessage =
         emailHint: string;
         color: string;
         profileType: ProfileType;
+        workspaceName: string;
+        isPaidAccount: boolean;
+        subscriptionExpiresAt: string;
         isDefaultPersonal: boolean;
       };
     }

@@ -1,24 +1,25 @@
-import { KDF_ITERATIONS, VAULT_MAGIC } from "../shared/constants";
+import { VAULT_MAGIC } from "../shared/constants";
 import type {
   CookieSnapshot,
   EncryptedPayload,
   StoredState
 } from "../shared/types";
-import { decryptJson, deriveAesKey, encryptJson, randomBase64 } from "./crypto";
+import {
+  decryptJson,
+  encryptJson,
+  importAesKeyFromBase64,
+  randomBase64
+} from "./crypto";
 
 interface VaultVerifier {
   magic: string;
   createdAt: string;
 }
 
-export async function createInitialState(
-  password: string
-): Promise<{ state: StoredState; key: CryptoKey }> {
-  assertPassword(password);
-
+export async function createInitialState(): Promise<{ state: StoredState; key: CryptoKey }> {
   const now = new Date().toISOString();
-  const salt = randomBase64(16);
-  const key = await deriveAesKey(password, salt, KDF_ITERATIONS);
+  const keySeed = randomBase64(32);
+  const key = await importAesKeyFromBase64(keySeed);
   const verifier = await encryptJson(key, {
     magic: VAULT_MAGIC,
     createdAt: now
@@ -29,8 +30,8 @@ export async function createInitialState(
     state: {
       version: 1,
       vault: {
-        salt,
-        iterations: KDF_ITERATIONS,
+        mode: "local",
+        keySeed,
         verifier,
         createdAt: now,
         updatedAt: now
@@ -42,21 +43,16 @@ export async function createInitialState(
   };
 }
 
-export async function unlockState(
-  state: StoredState,
-  password: string
-): Promise<CryptoKey> {
-  assertPassword(password);
+export async function unlockState(state: StoredState): Promise<CryptoKey> {
+  if (state.vault.mode !== "local" || !state.vault.keySeed) {
+    throw new Error("这是旧版口令保险箱，请重新保存账号快照");
+  }
 
-  const key = await deriveAesKey(
-    password,
-    state.vault.salt,
-    state.vault.iterations
-  );
+  const key = await importAesKeyFromBase64(state.vault.keySeed);
   const verifier = await decryptJson<VaultVerifier>(key, state.vault.verifier);
 
   if (verifier.magic !== VAULT_MAGIC) {
-    throw new Error("保险箱口令不正确");
+    throw new Error("本地保险箱校验失败");
   }
 
   return key;
@@ -74,10 +70,4 @@ export async function decryptCookieSnapshot(
   payload: EncryptedPayload
 ): Promise<CookieSnapshot> {
   return decryptJson<CookieSnapshot>(key, payload);
-}
-
-function assertPassword(password: string): void {
-  if (password.trim().length < 8) {
-    throw new Error("口令至少需要 8 个字符");
-  }
 }

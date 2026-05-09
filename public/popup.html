@@ -208,7 +208,93 @@
 
       @media (prefers-color-scheme: dark) {
         .tag {
+        color: #7ee2cc;
+        }
+      }
+
+      .meta-line {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 5px;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .meta-pill {
+        border-radius: 999px;
+        padding: 2px 7px;
+        background: rgba(102, 112, 133, 0.11);
+        color: #475467;
+      }
+
+      .validity {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+        border: 1px solid #a5ddcf;
+        border-radius: 7px;
+        padding: 7px 9px;
+        background: #e8f7f1;
+        color: #176b5b;
+        font-size: 12px;
+      }
+
+      .validity.expired {
+        border-color: #f0c2c2;
+        background: #fff1f1;
+        color: #bd3b3b;
+      }
+
+      .calendar-icon {
+        width: 14px;
+        height: 14px;
+        border: 2px solid currentColor;
+        border-radius: 3px;
+        position: relative;
+        box-sizing: border-box;
+      }
+
+      .calendar-icon::before {
+        content: "";
+        position: absolute;
+        left: 2px;
+        right: 2px;
+        top: 3px;
+        border-top: 2px solid currentColor;
+      }
+
+      .validity strong {
+        font-weight: 760;
+      }
+
+      .validity-date {
+        color: #526173;
+        font-variant-numeric: tabular-nums;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .meta-pill {
+          color: #c7ceda;
+          background: rgba(255, 255, 255, 0.08);
+        }
+
+        .validity {
+          border-color: rgba(126, 226, 204, 0.35);
+          background: rgba(23, 107, 91, 0.24);
           color: #7ee2cc;
+        }
+
+        .validity.expired {
+          border-color: rgba(255, 146, 146, 0.35);
+          background: rgba(189, 59, 59, 0.2);
+          color: #ffb0b0;
+        }
+
+        .validity-date {
+          color: #b5bdca;
         }
       }
 

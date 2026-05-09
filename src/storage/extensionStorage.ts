@@ -36,6 +36,8 @@ function assertStoredState(payload: unknown): asserts payload is StoredState {
   if (
     state.version !== 1 ||
     !state.vault ||
+    state.vault.mode !== "local" ||
+    typeof state.vault.keySeed !== "string" ||
     !Array.isArray(state.profiles) ||
     !state.encryptedSnapshots ||
     typeof state.encryptedSnapshots !== "object"

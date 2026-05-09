@@ -32,50 +32,9 @@ function renderShell(current: PublicState | null): void {
     return;
   }
 
-  if (!current?.hasVault) {
-    app.innerHTML = layout(`
-      <div class="box">
-        <div class="subtle" style="margin-bottom:10px;">第一次使用需要创建本地保险箱。口令不会保存，忘了就只能重新登录保存账号，别让脑袋离家出走。</div>
-        <div class="field">
-          <label for="new-password">保险箱口令</label>
-          <input id="new-password" class="input" type="password" autocomplete="new-password" placeholder="至少 8 个字符" />
-        </div>
-        <div class="field">
-          <label for="new-password-confirm">确认口令</label>
-          <input id="new-password-confirm" class="input" type="password" autocomplete="new-password" />
-        </div>
-        <button id="create-vault" class="btn">创建保险箱</button>
-      </div>
-    `);
-    bindBaseActions();
-    document.getElementById("create-vault")?.addEventListener("click", createVault);
-    return;
-  }
-
-  if (!current.unlocked) {
-    app.innerHTML = layout(`
-      <div class="box">
-        <div class="subtle" style="margin-bottom:10px;">输入口令解锁后才能保存或切换账号。</div>
-        <div class="field">
-          <label for="password">保险箱口令</label>
-          <input id="password" class="input" type="password" autocomplete="current-password" />
-        </div>
-        <button id="unlock-vault" class="btn">解锁</button>
-      </div>
-      <div class="box">
-        <button id="import-vault" class="btn ghost">导入加密备份</button>
-        <input id="import-file" class="hidden" type="file" accept="application/json,.json" />
-      </div>
-    `);
-    bindBaseActions();
-    document.getElementById("unlock-vault")?.addEventListener("click", unlockVault);
-    bindImport();
-    return;
-  }
-
   app.innerHTML = layout(`
     <div class="panel">
-      ${renderProfileList(current.profiles)}
+      ${renderProfileList(current?.profiles ?? [])}
       ${renderSaveProfileForm()}
       ${renderVaultTools(current)}
     </div>
@@ -91,9 +50,8 @@ function layout(content: string): string {
     <div class="topbar">
       <div>
         <h1 class="title">GPT Switch</h1>
-        <div class="subtle">本地加密保存 ChatGPT 会话快照</div>
+        <div class="subtle">本地自动加密保存 ChatGPT 会话快照</div>
       </div>
-      ${state?.unlocked ? `<button id="lock-vault" class="btn secondary" style="flex:0;">锁定</button>` : ""}
     </div>
     <div id="message" class="message ${isError ? "error" : ""}">${escapeHtml(message)}</div>
     ${content}
@@ -122,7 +80,12 @@ function renderProfileList(profiles: Profile[]): string {
                   <span>${escapeHtml(profile.label)}</span>
                   ${profile.isDefaultPersonal ? `<span class="tag">个人默认</span>` : `<span class="tag">${profileTypeLabel(profile.type)}</span>`}
                 </div>
-                <div class="subtle">${escapeHtml(profile.emailHint || "未填写邮箱提示")} · 保存于 ${formatDate(profile.capturedAt)}</div>
+                <div class="meta-line">
+                  <span class="meta-pill">${renderProfileScope(profile)}</span>
+                  <span class="meta-pill">${escapeHtml(profile.emailHint || "未填写邮箱提示")}</span>
+                </div>
+                ${renderValidity(profile)}
+                <div class="subtle" style="margin-top:6px;">保存于 ${formatDate(profile.capturedAt)}</div>
                 <div class="profile-actions">
                   <button class="btn" data-action="switch" data-profile-id="${escapeAttribute(profile.id)}">切换</button>
                   <button class="btn secondary" data-action="default" data-profile-id="${escapeAttribute(profile.id)}">设为个人</button>
@@ -153,15 +116,26 @@ function renderSaveProfileForm(): string {
         <div class="field">
           <label for="profile-type">类型</label>
           <select id="profile-type" class="select">
-            <option value="normal">普通</option>
             <option value="personal">个人</option>
-            <option value="workspace">工作区</option>
+            <option value="workspace">Team</option>
           </select>
         </div>
         <div class="field">
           <label for="profile-color">颜色</label>
           <input id="profile-color" class="input" type="color" value="#176b5b" />
         </div>
+      </div>
+      <div class="field">
+        <label for="profile-workspace">Team Name</label>
+        <input id="profile-workspace" class="input" placeholder="Team 账号填写，例如：helloword1" />
+      </div>
+      <label class="row" style="justify-content:flex-start;margin-bottom:10px;">
+        <input id="profile-paid" type="checkbox" style="flex:0;" />
+        <span class="subtle">订阅 / 付费账号</span>
+      </label>
+      <div class="field">
+        <label for="profile-expiry">账号有效期</label>
+        <input id="profile-expiry" class="input" type="datetime-local" />
       </div>
       <label class="row" style="justify-content:flex-start;margin-bottom:10px;">
         <input id="profile-default" type="checkbox" style="flex:0;" />
@@ -172,11 +146,11 @@ function renderSaveProfileForm(): string {
   `;
 }
 
-function renderVaultTools(current: PublicState): string {
+function renderVaultTools(current: PublicState | null): string {
   return `
     <div class="box">
       <div class="row">
-        <button id="rollback" class="btn secondary" ${current.hasRollback ? "" : "disabled"}>回滚上次切换</button>
+        <button id="rollback" class="btn secondary" ${current?.hasRollback ? "" : "disabled"}>回滚上次切换</button>
         <button id="export-vault" class="btn ghost">导出备份</button>
       </div>
       <div style="height:8px;"></div>
@@ -187,9 +161,7 @@ function renderVaultTools(current: PublicState): string {
 }
 
 function bindBaseActions(): void {
-  document.getElementById("lock-vault")?.addEventListener("click", async () => {
-    await sendAndRefresh({ type: "LOCK_VAULT" }, "已锁定");
-  });
+  // No manual unlock step: the extension manages a local encryption key.
 }
 
 function bindProfileActions(): void {
@@ -232,6 +204,10 @@ function bindSaveProfile(): void {
     const emailHint = inputValue("profile-email");
     const color = inputValue("profile-color") || "#176b5b";
     const profileType = inputValue("profile-type") as ProfileType;
+    const workspaceName = inputValue("profile-workspace");
+    const isPaidAccount =
+      document.querySelector<HTMLInputElement>("#profile-paid")?.checked ?? false;
+    const subscriptionExpiresAt = inputValue("profile-expiry");
     const isDefaultPersonal =
       document.querySelector<HTMLInputElement>("#profile-default")?.checked ?? false;
 
@@ -243,6 +219,9 @@ function bindSaveProfile(): void {
           emailHint,
           color,
           profileType,
+          workspaceName,
+          isPaidAccount,
+          subscriptionExpiresAt,
           isDefaultPersonal
         }
       },
@@ -258,25 +237,6 @@ function bindVaultTools(): void {
 
   document.getElementById("export-vault")?.addEventListener("click", exportVault);
   bindImport();
-}
-
-async function createVault(): Promise<void> {
-  const password = inputValue("new-password");
-  const confirmPassword = inputValue("new-password-confirm");
-
-  if (password !== confirmPassword) {
-    setMessage("两次口令不一致", true);
-    return;
-  }
-
-  await sendAndRefresh({ type: "SETUP_VAULT", password }, "保险箱已创建");
-}
-
-async function unlockVault(): Promise<void> {
-  await sendAndRefresh(
-    { type: "UNLOCK_VAULT", password: inputValue("password") },
-    "已解锁"
-  );
 }
 
 async function exportVault(): Promise<void> {
@@ -313,7 +273,7 @@ function bindImport(): void {
 
     const text = await file.text();
     const parsed = JSON.parse(text) as unknown;
-    await sendAndRefresh({ type: "IMPORT_VAULT", payload: parsed }, "已导入，请重新解锁");
+    await sendAndRefresh({ type: "IMPORT_VAULT", payload: parsed }, "已导入");
   });
 }
 
@@ -372,10 +332,64 @@ function profileTypeLabel(type: ProfileType): string {
   }
 
   if (type === "workspace") {
-    return "工作区";
+    return "Team";
   }
 
   return "普通";
+}
+
+function renderProfileScope(profile: Profile): string {
+  if (profile.type === "workspace") {
+    return `Team Name: ${escapeHtml(profile.workspaceName || "未填写")}`;
+  }
+
+  return "个人账号";
+}
+
+function renderValidity(profile: Profile): string {
+  if (!profile.isPaidAccount && !profile.subscriptionExpiresAt) {
+    return "";
+  }
+
+  if (!profile.subscriptionExpiresAt) {
+    return `<div class="validity"><span class="calendar-icon"></span><strong>有效期未填写</strong><span class="validity-date">付费账号</span></div>`;
+  }
+
+  const expiry = new Date(profile.subscriptionExpiresAt);
+
+  if (Number.isNaN(expiry.getTime())) {
+    return "";
+  }
+
+  const remainingDays = Math.ceil(
+    (expiry.getTime() - Date.now()) / (24 * 60 * 60 * 1000)
+  );
+  const expired = remainingDays < 0;
+  const text = expired ? "已过期" : `有效期 ${Math.max(remainingDays, 0)}天`;
+
+  return `
+    <div class="validity ${expired ? "expired" : ""}">
+      <span class="calendar-icon"></span>
+      <strong>${text}</strong>
+      <span class="validity-date">${formatExactDate(profile.subscriptionExpiresAt)}</span>
+    </div>
+  `;
+}
+
+function formatExactDate(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+
+  return `${year}-${month}-${day} ${hour}:${minute}`;
 }
 
 function formatDate(value: string): string {

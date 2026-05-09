@@ -49,13 +49,6 @@ async function handleMessage(
   switch (message.type) {
     case "GET_STATE":
       return getPublicState();
-    case "SETUP_VAULT":
-      return setupVault(message.password);
-    case "UNLOCK_VAULT":
-      return unlockVault(message.password);
-    case "LOCK_VAULT":
-      activeKey = null;
-      return getPublicState();
     case "SAVE_CURRENT_PROFILE":
       return saveCurrentProfile(message.payload);
     case "SWITCH_PROFILE":
@@ -78,36 +71,15 @@ async function handleMessage(
 }
 
 async function getPublicState(): Promise<PublicState> {
-  const state = await getStoredState();
+  const { state } = await getReadyState();
 
   return {
-    hasVault: Boolean(state),
-    unlocked: Boolean(activeKey),
-    profiles: state?.profiles ?? [],
-    hasRollback: Boolean(state?.rollbackSnapshot),
+    hasVault: true,
+    unlocked: true,
+    profiles: state.profiles,
+    hasRollback: Boolean(state.rollbackSnapshot),
     lastError
   };
-}
-
-async function setupVault(password: string): Promise<PublicState> {
-  const existing = await getStoredState();
-
-  if (existing) {
-    throw new Error("保险箱已经存在，请先导出备份后再重置");
-  }
-
-  const { state, key } = await createInitialState(password);
-  activeKey = key;
-  await setStoredState(state);
-  lastError = undefined;
-  return getPublicState();
-}
-
-async function unlockVault(password: string): Promise<PublicState> {
-  const state = await requireState();
-  activeKey = await unlockState(state, password);
-  lastError = undefined;
-  return getPublicState();
 }
 
 async function saveCurrentProfile(payload: {
@@ -115,10 +87,12 @@ async function saveCurrentProfile(payload: {
   emailHint: string;
   color: string;
   profileType: Profile["type"];
+  workspaceName: string;
+  isPaidAccount: boolean;
+  subscriptionExpiresAt: string;
   isDefaultPersonal: boolean;
 }): Promise<PublicState> {
-  const state = await requireState();
-  const key = requireKey();
+  const { state, key } = await getReadyState();
   const label = payload.label.trim();
 
   if (!label) {
@@ -141,6 +115,12 @@ async function saveCurrentProfile(payload: {
     emailHint: payload.emailHint.trim(),
     color: normalizeColor(payload.color),
     type: isDefaultPersonal ? "personal" : payload.profileType,
+    workspaceName:
+      payload.profileType === "workspace" ? payload.workspaceName.trim() : "",
+    isPaidAccount: payload.isPaidAccount,
+    subscriptionExpiresAt: normalizeSubscriptionExpiresAt(
+      payload.subscriptionExpiresAt
+    ),
     isDefaultPersonal,
     capturedAt: snapshot.capturedAt,
     encryptedCookieSnapshotId: snapshotId
@@ -163,8 +143,7 @@ async function saveCurrentProfile(payload: {
 }
 
 async function switchProfile(profileId: string): Promise<PublicState> {
-  const state = await requireState();
-  const key = requireKey();
+  const { state, key } = await getReadyState();
   const profile = findProfile(state, profileId);
   const payload = state.encryptedSnapshots[profile.encryptedCookieSnapshotId];
 
@@ -188,7 +167,7 @@ async function switchProfile(profileId: string): Promise<PublicState> {
     }
   });
 
-  const latest = await requireState();
+  const { state: latest } = await getReadyState();
   await setStoredState({
     ...latest,
     profiles: latest.profiles.map((item) =>
@@ -202,7 +181,7 @@ async function switchProfile(profileId: string): Promise<PublicState> {
 }
 
 async function switchDefaultPersonal(): Promise<PublicState> {
-  const state = await requireState();
+  const { state } = await getReadyState();
   const profile = state.profiles.find((item) => item.isDefaultPersonal);
 
   if (!profile) {
@@ -213,7 +192,7 @@ async function switchDefaultPersonal(): Promise<PublicState> {
 }
 
 async function setDefaultPersonal(profileId: string): Promise<PublicState> {
-  const state = await requireState();
+  const { state } = await getReadyState();
   findProfile(state, profileId);
 
   await setStoredState({
@@ -229,7 +208,7 @@ async function setDefaultPersonal(profileId: string): Promise<PublicState> {
 }
 
 async function deleteProfile(profileId: string): Promise<PublicState> {
-  const state = await requireState();
+  const { state } = await getReadyState();
   const profile = findProfile(state, profileId);
   const encryptedSnapshots = { ...state.encryptedSnapshots };
   delete encryptedSnapshots[profile.encryptedCookieSnapshotId];
@@ -244,8 +223,7 @@ async function deleteProfile(profileId: string): Promise<PublicState> {
 }
 
 async function rollbackLastSwitch(): Promise<PublicState> {
-  const state = await requireState();
-  const key = requireKey();
+  const { state, key } = await getReadyState();
 
   if (!state.rollbackSnapshot) {
     throw new Error("没有可回滚的切换快照");
@@ -265,16 +243,17 @@ async function rollbackLastSwitch(): Promise<PublicState> {
 }
 
 async function exportVault(): Promise<StoredState> {
-  return requireState();
+  const { state } = await getReadyState();
+  return state;
 }
 
 async function importVault(payload: unknown): Promise<PublicState> {
   const state = await replaceStoredState(payload);
-  activeKey = null;
+  activeKey = await unlockState(state);
   lastError = undefined;
   return {
     hasVault: true,
-    unlocked: false,
+    unlocked: true,
     profiles: state.profiles,
     hasRollback: Boolean(state.rollbackSnapshot)
   };
@@ -307,22 +286,24 @@ async function persistRollbackSnapshot(
   });
 }
 
-async function requireState(): Promise<StoredState> {
-  const state = await getStoredState();
+async function getReadyState(): Promise<{ state: StoredState; key: CryptoKey }> {
+  const existing = await getStoredState();
 
-  if (!state) {
-    throw new Error("还没有创建保险箱");
+  if (!existing) {
+    const created = await createInitialState();
+    activeKey = created.key;
+    await setStoredState(created.state);
+    lastError = undefined;
+    return created;
   }
 
-  return state;
-}
-
-function requireKey(): CryptoKey {
-  if (!activeKey) {
-    throw new Error("保险箱未解锁，请先输入口令");
+  if (activeKey) {
+    return { state: existing, key: activeKey };
   }
 
-  return activeKey;
+  activeKey = await unlockState(existing);
+  lastError = undefined;
+  return { state: existing, key: activeKey };
 }
 
 function findProfile(state: StoredState, profileId: string): Profile {
@@ -337,6 +318,18 @@ function findProfile(state: StoredState, profileId: string): Profile {
 
 function normalizeColor(color: string): string {
   return /^#[0-9a-f]{6}$/i.test(color) ? color : "#176b5b";
+}
+
+function normalizeSubscriptionExpiresAt(value: string): string {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  const date = new Date(trimmed);
+
+  return Number.isNaN(date.getTime()) ? "" : trimmed;
 }
 
 function formatError(error: unknown): string {

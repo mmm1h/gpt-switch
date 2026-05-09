@@ -36,6 +36,16 @@ export async function deriveAesKey(
   );
 }
 
+export async function importAesKeyFromBase64(keyBase64: string): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
+    "raw",
+    toArrayBuffer(base64ToBytes(keyBase64)),
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
 export async function encryptJson(
   key: CryptoKey,
   value: unknown
