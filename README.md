@@ -1,140 +1,120 @@
 # GPT Account Switcher
 
-Chrome / Edge MV3 扩展，用本地加密 vault 保存多个 ChatGPT 登录会话快照，并支持一键切换。
+<p align="center">
+  <img src="public/icons/icon128.png" alt="GPT Account Switcher" width="96">
+</p>
 
-## 能做什么
+<p align="center">
+  <strong>ChatGPT 多账号一键切换</strong><br>
+  本地加密 · 零密码存储 · 隐私优先
+</p>
 
-- 保存当前已登录的 ChatGPT / OpenAI cookie 快照，包括 `HttpOnly` cookie。
-- 用扩展本地自动密钥加密保存快照，不需要输入口令，不保存账号密码。
-- 在扩展弹窗里切换账号。
-- 保存账号时自动检测邮箱、套餐、Team Name 和可解析的订阅有效期；账号标签可填可不填。
-- 当前账号已经保存过时，弹窗只显示“当前账号已保存”，不再提示重复保存。
-- 当工作区到期、解散或不可访问时，页面会提示是否切回已保存的个人账号。
-- 支持导出 / 导入加密 vault。
+<p align="center">
+  <img src="https://img.shields.io/badge/Chrome-Extension-4285F4?logo=googlechrome&logoColor=white" alt="Chrome">
+  <img src="https://img.shields.io/badge/Edge-Extension-0078D7?logo=microsoftedge&logoColor=white" alt="Edge">
+  <img src="https://img.shields.io/badge/MV3-Ready-green" alt="MV3">
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
+  <img src="https://img.shields.io/badge/License-MIT-blue" alt="MIT">
+  <img src="https://img.shields.io/github/v/release/mmm1h/gpt-switch?label=Version" alt="Version">
+</p>
 
-## 不能做什么
+---
 
-- 不保存密码。
-- 不绕过 2FA、验证码、风控或访问限制。
-- 不调用 ChatGPT 私有接口做账号操作；账号检测只做只读、尽力而为的轻量读取。
-- 不做云同步。
+多个 ChatGPT 账号反复登出登录太烦？这个扩展会把你的登录会话加密保存在本地，切换账号只需点一下——不用输密码，不用过验证码。
+
+## 亮点功能
+
+| 功能 | 说明 |
+|------|------|
+| **一键切换** | 弹窗或页面浮动按钮，点击即切换 |
+| **本地加密** | 自动密钥加密 cookie，无需记忆口令 |
+| **智能识别** | 自动检测邮箱、套餐、Team/Personal、订阅有效期 |
+| **防重复保存** | 已保存账号自动识别，避免误操作 |
+| **工作区保护** | 工作区到期或不可用时，智能提示切回个人账号 |
+| **导入/导出** | 加密 vault 可备份迁移 |
+
+## 隐私边界
+
+- 不保存密码，不存储凭据
+- 不绕过 2FA、验证码或风控
+- 不调用 ChatGPT 私有接口
+- 不做云同步，数据始终在本机
+- cookie 加密存储，元数据（邮箱、套餐等）明文保存
+
+## 安装
+
+### 从 Release 安装
+
+1. 从 [Releases](https://github.com/mmm1h/gpt-switch/releases) 下载最新 `.zip`
+2. 解压到任意文件夹
+3. 打开 `chrome://extensions/` 或 `edge://extensions/`
+4. 开启**开发者模式**
+5. 点击**加载已解压的扩展**，选择解压后的文件夹
+
+### 从源码构建
+
+```bash
+git clone https://github.com/mmm1h/gpt-switch.git
+cd gpt-switch
+npm install
+npm run build
+```
+
+构建产物在 `dist/`，按上述步骤加载即可。
+
+## 使用方法
+
+1. 登录你的 ChatGPT 账号
+2. 点击扩展图标打开弹窗
+3. 等待账号信息识别完成，可选填标签，点击**保存**
+4. 切换到另一个账号，重复保存
+5. 之后在弹窗或页面右下角浮动按钮中点击即可切换
 
 ## 开发
 
-```powershell
+```bash
+# 安装依赖
 npm install
+
+# 单元测试
 npm test
+
+# 端到端测试
 npm run e2e
+
+# 构建
 npm run build
+
+# 打包发布 ZIP
 npm run package:zip
 ```
 
-构建产物在 `dist/`。
+### 调试模式
 
-发布 ZIP 会生成到 `release/`：
-
-```powershell
-npm run build
-npm run package:zip
-```
-
-当前文件名形如 `release/gpt-account-switcher-v0.1.4.zip`。ZIP 根目录直接包含 `manifest.json`、`background.js`、`popup.html` 等扩展文件。
-
-Chrome/Edge 开发者模式下最稳的本地安装方式仍是：
-
-1. 解压 ZIP 到一个文件夹。
-2. 打开 `chrome://extensions/` 或 `edge://extensions/`。
-3. 开启开发者模式。
-4. 选择“加载已解压的扩展”并选中解压后的文件夹。
-
-说明：Chrome 对“直接拖入 ZIP 安装”的支持并不稳定，未签名扩展通常需要加载解压目录；`.crx` 才更接近拖拽安装。
-
-本项目在 `manifest.json` 里固定了开发用 public key，因此本地开发加载的扩展 ID 固定为：
-
-```text
-ionngapfgimmibmiahmgieegfcocndcn
-```
-
-如果你之前安装过没有固定 ID 的旧版本，Chrome 会把新版本当成另一个扩展。处理方式是先在 `chrome://extensions/` 删除旧的重复项，只保留这个固定 ID 的版本；之后新构建不会再变成第二个扩展。
-
-`npm run e2e` 会先构建扩展，再用 Playwright 启动一个临时 Chromium 用户目录加载 `dist/`。当前自动验收覆盖：
-
-- 扩展能被 Chromium 加载。
-- popup 能初始化本地加密 vault。
-- popup 能自动显示当前账号检测预览；账号已保存时隐藏保存入口。
-- 保存账号时只需要可选标签，账号卡片顶部显示邮箱、套餐、Team/Personal 和有效期状态。
-- ChatGPT 页面能注入右下角扩展 icon 浮动入口。
-- 页面浮动入口使用扩展 icon，面板支持点击页面空白区域关闭。
-- 工作区不可用页面会显示“切回个人账号”确认弹窗。
-
-如果本机缺 Playwright 浏览器，可先运行：
-
-```powershell
-npx playwright install chromium
-```
-
-真实账号 A/B 切换仍需要手动登录准备会话，自动测试不会保存密码、绕过 2FA、验证码或风控。
-
-### 连接真实 Chrome 排查
-
-普通已打开的 Chrome 如果没有 `--remote-debugging-port`，Playwright 不能直接接管。推荐用独立调试 profile：
-
-```powershell
-npm run build
+```bash
+# 启动带远程调试的 Chrome
 npm run chrome:debug
-```
 
-在打开的 debug Chrome 里登录 ChatGPT 后运行：
-
-```powershell
+# 连接真实 Chrome 运行 E2E
 npm run e2e:chrome
 ```
 
-这个路径会连接 `http://127.0.0.1:9222`，用于快速检查真实页面里的浮动入口、面板开合和当前扩展加载状态。主流程 CI 仍使用隔离的 `npm run e2e`。
+### 发布
 
-## 本地加载
-
-1. 打开 Chrome / Edge 的扩展管理页面。
-2. 开启“开发者模式”。
-3. 选择“加载已解压的扩展”。
-4. 选择本项目的 `dist/` 目录。
-
-## GitHub 自动构建
-
-`.github/workflows/build.yml` 会在 `main` push、PR、手动触发和 `v*` tag 时运行：
-
-- `npm ci`
-- `npm test`
-- `npm run build`
-- `npm run package:zip`
-- 上传 `release/*.zip` 作为 workflow artifact
-- 如果触发来源是 `v*` tag，则自动创建/更新 GitHub Release 并上传 ZIP
-
-创建正式发布示例：
-
-```powershell
-git tag v0.1.0
-git push origin v0.1.0
+```bash
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
-Actions 完成后，GitHub Release 里会带可下载 ZIP。
+GitHub Actions 会自动构建并创建 Release。
 
-## 使用流程
+## 技术栈
 
-1. 手动登录 ChatGPT 账号 A。
-2. 打开扩展弹窗。
-3. 等待账号预览完成；如果当前账号还没保存，账号标签可填可空，点击“保存当前账号”。
-4. 手动切换登录账号 B，再保存第二个账号。
-5. 之后在扩展弹窗或页面右下角浮动按钮里点击账号切换。
+- **TypeScript** + **Vite** 构建
+- **Chrome MV3** 扩展 API
+- **Web Crypto API** 本地加密
+- **Playwright** E2E 测试
 
-## 自动保存策略
+## License
 
-技术上扩展可以在检测到新账号后自动保存 cookie 快照，但 v1 采用提示式保存：只有未保存账号才展示保存入口，仍由用户主动点击。这样能避免误保存临时账号、测试账号或别人短暂登录的账号，隐私边界更稳一点。
-
-## 安全边界
-
-扩展需要 `cookies` 权限和 ChatGPT / OpenAI 域名权限，因为核心功能就是读取并恢复这些域名的登录 cookie。cookie value 会进入本地密钥加密 vault；账号邮箱、标签、颜色、Team Name、订阅有效期和时间戳是明文元数据。
-
-取消口令后，使用体验更轻，但本地扩展存储泄漏时不能再依赖用户口令做第二道保护。账号邮箱、套餐、Team Name 和有效期属于明文元数据；cookie value 仍保存在本地密钥加密 vault 中。这个项目默认按个人本机工具处理，不做云同步。
-
-如果 ChatGPT 登录机制变更，旧快照可能会失效。此时需要手动重新登录并刷新保存账号。
+MIT
