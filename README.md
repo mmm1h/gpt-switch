@@ -5,8 +5,12 @@
 </p>
 
 <p align="center">
-  <strong>ChatGPT 多账号一键切换</strong><br>
-  本地加密 · 零密码存储 · 隐私优先
+  <strong>One-Click Multiple ChatGPT Account Switcher</strong><br>
+  Local Encryption · Zero Password Storage · Privacy First
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> | <a href="README_zh-CN.md">简体中文</a>
 </p>
 
 <p align="center">
@@ -20,38 +24,39 @@
 
 ---
 
-多个 ChatGPT 账号反复登出登录太烦？这个扩展会把你的登录会话加密保存在本地，切换账号只需点一下——不用输密码，不用过验证码。
+Tired of repeatedly logging in and out of multiple ChatGPT accounts? This extension securely encrypts and stores your login sessions locally. Switch between accounts with a single click—no passwords, no CAPTCHAs.
 
-## 亮点功能
+## ✨ Features
 
-| 功能 | 说明 |
+| Feature | Description |
 |------|------|
-| **一键切换** | 弹窗或页面浮动按钮，点击即切换 |
-| **本地加密** | 自动密钥加密 cookie，无需记忆口令 |
-| **智能识别** | 自动检测邮箱、套餐、Team/Personal、订阅有效期 |
-| **防重复保存** | 已保存账号自动识别，避免误操作 |
-| **工作区保护** | 工作区到期或不可用时，智能提示切回个人账号 |
-| **导入/导出** | 加密 vault 可备份迁移 |
+| **One-Click Switch** | Switch instantly via the popup menu or on-page floating button. |
+| **Local Encryption** | Auto-generated keys encrypt cookies, requiring no master password. |
+| **Smart Detection** | Automatically detects email, plan, Team/Personal workspace, and subscription validity. |
+| **Session Validation** | Verifies session authenticity upon switching, automatically rolling back if the target session has expired. |
+| **Expiry Warnings** | Proactively warns you when a saved cookie is within 7 days of expiration. |
+| **Workspace Protection**| Prompts to switch back to a personal account when a workspace expires or becomes unavailable. |
+| **Import / Export** | Backup and migrate your encrypted vault effortlessly. |
 
-## 隐私边界
+## 🛡️ Privacy Boundaries
 
-- 不保存密码，不存储凭据
-- 不绕过 2FA、验证码或风控
-- 不调用 ChatGPT 私有接口
-- 不做云同步，数据始终在本机
-- cookie 加密存储，元数据（邮箱、套餐等）明文保存
+- **No Passwords:** We do not save or store passwords/credentials.
+- **No Bypassing:** We do not bypass 2FA, CAPTCHAs, or risk control mechanisms.
+- **No Private APIs:** We do not invoke internal or private ChatGPT APIs.
+- **No Cloud Sync:** Data is never sent to the cloud; it remains strictly on your local machine.
+- **Data Handling:** Cookies are stored encrypted. Non-sensitive metadata (email, plan type, etc.) is stored in plaintext.
 
-## 安装
+## 📦 Installation
 
-### 从 Release 安装
+### From Release
 
-1. 从 [Releases](https://github.com/mmm1h/gpt-switch/releases) 下载最新 `.zip`
-2. 解压到任意文件夹
-3. 打开 `chrome://extensions/` 或 `edge://extensions/`
-4. 开启**开发者模式**
-5. 点击**加载已解压的扩展**，选择解压后的文件夹
+1. Download the latest `.zip` file from [Releases](https://github.com/mmm1h/gpt-switch/releases).
+2. Extract the archive to a folder of your choice.
+3. Navigate to `chrome://extensions/` or `edge://extensions/` in your browser.
+4. Enable **Developer mode** in the top right corner.
+5. Click **Load unpacked** and select the extracted folder.
 
-### 从源码构建
+### Build from Source
 
 ```bash
 git clone https://github.com/mmm1h/gpt-switch.git
@@ -60,61 +65,61 @@ npm install
 npm run build
 ```
 
-构建产物在 `dist/`，按上述步骤加载即可。
+The output will be in the `dist/` directory. Load it as an unpacked extension following the steps above.
 
-## 使用方法
+## 🚀 Usage
 
-1. 登录你的 ChatGPT 账号
-2. 点击扩展图标打开弹窗
-3. 等待账号信息识别完成，可选填标签，点击**保存**
-4. 切换到另一个账号，重复保存
-5. 之后在弹窗或页面右下角浮动按钮中点击即可切换
+1. Log in to your ChatGPT account.
+2. Click the extension icon to open the popup.
+3. Wait for the account information to be detected. You can optionally add a label, then click **Save**.
+4. Log in to another account and repeat the saving process.
+5. You can now seamlessly switch between accounts via the popup or the floating button on the ChatGPT page.
 
-## 开发
+## 🛠️ Development
 
 ```bash
-# 安装依赖
+# Install dependencies
 npm install
 
-# 单元测试
+# Unit tests
 npm test
 
-# 端到端测试
+# End-to-End tests
 npm run e2e
 
-# 构建
+# Build the extension
 npm run build
 
-# 打包发布 ZIP
+# Package into ZIP for release
 npm run package:zip
 ```
 
-### 调试模式
+### Debugging
 
 ```bash
-# 启动带远程调试的 Chrome
+# Start Chrome with remote debugging enabled
 npm run chrome:debug
 
-# 连接真实 Chrome 运行 E2E
+# Run E2E tests against the real Chrome instance
 npm run e2e:chrome
 ```
 
-### 发布
+### Release Process
 
 ```bash
 git tag v0.2.0
 git push origin v0.2.0
 ```
 
-GitHub Actions 会自动构建并创建 Release。
+GitHub Actions will automatically build the project and create a new Release.
 
-## 技术栈
+## 🥞 Tech Stack
 
-- **TypeScript** + **Vite** 构建
-- **Chrome MV3** 扩展 API
-- **Web Crypto API** 本地加密
-- **Playwright** E2E 测试
+- **TypeScript** + **Vite**
+- **Chrome Extension MV3** API
+- **Web Crypto API** for local encryption
+- **Playwright** for E2E testing
 
-## License
+## 📄 License
 
 MIT
