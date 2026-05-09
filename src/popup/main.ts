@@ -444,19 +444,30 @@ function renderProfileScope(profile: Profile): string {
 }
 
 function renderValidity(profile: Profile): string {
+  const warnings: string[] = [];
+
+  if (profile.minCookieExpiresAt) {
+    const timeUntilExpiry = profile.minCookieExpiresAt - (Date.now() / 1000);
+    const sevenDaysInSeconds = 7 * 24 * 60 * 60;
+    if (timeUntilExpiry < sevenDaysInSeconds) {
+      warnings.push(`<div class="validity warning">⚠️ 核心状态即将过期，请切换登录后重新保存</div>`);
+    }
+  }
+
   const shouldShow =
     Boolean(profile.subscriptionExpiresAt) ||
     Boolean(profile.isPaidAccount) ||
     Boolean(profile.planType && profile.planType !== "free" && profile.planType !== "unknown");
 
   if (!shouldShow) {
-    return "";
+    return warnings.join("");
   }
 
   const view = getValidityView(profile.subscriptionExpiresAt);
   const percent = getValidityPercent(profile.subscriptionExpiresAt, view.status);
 
   return `
+    ${warnings.join("")}
     <div class="validity ${view.status === "expired" ? "expired" : ""} ${view.status === "unknown" ? "unknown" : ""}">
       <div class="validity-line">
         <strong>${escapeHtml(view.label)}</strong>

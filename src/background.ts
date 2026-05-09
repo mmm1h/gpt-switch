@@ -217,6 +217,25 @@ async function switchProfile(profileId: string): Promise<PublicState> {
     },
     refreshTabs: async () => {
       await refreshChatGptTabs(true);
+    },
+    validateTarget: async () => {
+      try {
+        const response = await fetch("https://chatgpt.com/api/auth/session");
+        if (!response.ok) return false;
+        const text = await response.text();
+        if (!text) return false;
+        try {
+          const json = JSON.parse(text);
+          return Boolean(json && json.user);
+        } catch {
+          return false;
+        }
+      } catch {
+        return false;
+      }
+    },
+    applyRollback: async (rollbackSnapshot) => {
+      await applyCookieSnapshot(rollbackSnapshot);
     }
   });
 

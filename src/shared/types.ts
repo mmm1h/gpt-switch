@@ -56,6 +56,7 @@ export interface Profile {
   capturedAt: string;
   lastUsedAt?: string;
   encryptedCookieSnapshotId: string;
+  minCookieExpiresAt?: number;
 }
 
 export interface EncryptedPayload {
@@ -99,6 +100,7 @@ export interface SnapshotCookie {
 
 export interface CookieSnapshot {
   capturedAt: string;
+  minCookieExpiresAt?: number;
   cookies: SnapshotCookie[];
 }
 

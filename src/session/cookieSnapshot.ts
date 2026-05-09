@@ -7,6 +7,7 @@ type ChromeRemoveDetailsWithPartition = chrome.cookies.CookieDetails;
 
 export async function captureCurrentCookies(): Promise<CookieSnapshot> {
   const cookies = new Map<string, SnapshotCookie>();
+  let minCookieExpiresAt: number | undefined;
 
   for (const domain of COOKIE_DOMAIN_SUFFIXES) {
     const domainCookies = await getAllCookies({ domain });
@@ -16,12 +17,19 @@ export async function captureCurrentCookies(): Promise<CookieSnapshot> {
 
       if (isManagedCookie(normalized)) {
         cookies.set(cookieKey(normalized), normalized);
+        
+        if (normalized.expirationDate) {
+          minCookieExpiresAt = minCookieExpiresAt 
+            ? Math.min(minCookieExpiresAt, normalized.expirationDate)
+            : normalized.expirationDate;
+        }
       }
     }
   }
 
   return {
     capturedAt: new Date().toISOString(),
+    minCookieExpiresAt,
     cookies: Array.from(cookies.values()).sort(compareCookie)
   };
 }
