@@ -122,10 +122,17 @@ export interface CurrentAccountStatus {
   canSave: boolean;
 }
 
+export interface CachedCurrentAccountStatus {
+  status: CurrentAccountStatus;
+  cachedAt: string;
+  tabId?: number;
+  url?: string;
+}
+
 export type RuntimeMessage =
   | { type: "GET_STATE" }
-  | { type: "DETECT_CURRENT_ACCOUNT" }
-  | { type: "GET_CURRENT_ACCOUNT_STATUS" }
+  | { type: "GET_CACHED_CURRENT_ACCOUNT_STATUS" }
+  | { type: "PRELOAD_CURRENT_ACCOUNT_STATUS"; url: string }
   | {
       type: "SAVE_CURRENT_PROFILE";
       payload: {

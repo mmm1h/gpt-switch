@@ -1,5 +1,7 @@
 export const STORAGE_KEY = "gptAccountSwitcherState";
 
+export const CURRENT_ACCOUNT_STATUS_CACHE_KEY = "gptAccountSwitcherCurrentAccountStatus";
+
 export const CHATGPT_HOME_URL = "https://chatgpt.com/";
 
 export const COOKIE_DOMAIN_SUFFIXES = ["chatgpt.com", "openai.com"];

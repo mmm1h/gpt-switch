@@ -7,7 +7,6 @@ type ChromeRemoveDetailsWithPartition = chrome.cookies.CookieDetails;
 
 export async function captureCurrentCookies(): Promise<CookieSnapshot> {
   const cookies = new Map<string, SnapshotCookie>();
-  let minCookieExpiresAt: number | undefined;
 
   for (const domain of COOKIE_DOMAIN_SUFFIXES) {
     const domainCookies = await getAllCookies({ domain });
@@ -17,20 +16,16 @@ export async function captureCurrentCookies(): Promise<CookieSnapshot> {
 
       if (isManagedCookie(normalized)) {
         cookies.set(cookieKey(normalized), normalized);
-        
-        if (normalized.expirationDate) {
-          minCookieExpiresAt = minCookieExpiresAt 
-            ? Math.min(minCookieExpiresAt, normalized.expirationDate)
-            : normalized.expirationDate;
-        }
       }
     }
   }
 
+  const snapshotCookies = Array.from(cookies.values()).sort(compareCookie);
+
   return {
     capturedAt: new Date().toISOString(),
-    minCookieExpiresAt,
-    cookies: Array.from(cookies.values()).sort(compareCookie)
+    minCookieExpiresAt: getMinCookieExpiresAt(snapshotCookies),
+    cookies: snapshotCookies
   };
 }
 
@@ -76,6 +71,28 @@ export function isManagedCookie(cookie: Pick<SnapshotCookie, "domain">): boolean
   return COOKIE_DOMAIN_SUFFIXES.some(
     (suffix) =>
       normalizedDomain === suffix || normalizedDomain.endsWith(`.${suffix}`)
+  );
+}
+
+export function getMinCookieExpiresAt(cookies: SnapshotCookie[]): number | undefined {
+  const coreAuthExpiries = cookies
+    .filter(isCoreAuthCookie)
+    .map((cookie) => cookie.expirationDate)
+    .filter((value): value is number => typeof value === "number" && value > 0);
+
+  if (coreAuthExpiries.length === 0) {
+    return undefined;
+  }
+
+  return Math.min(...coreAuthExpiries);
+}
+
+function isCoreAuthCookie(cookie: SnapshotCookie): boolean {
+  const name = cookie.name.toLowerCase();
+
+  return (
+    name.includes("session") ||
+    /(?:access|refresh)[-_]?token/.test(name)
   );
 }
 

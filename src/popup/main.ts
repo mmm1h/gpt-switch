@@ -7,6 +7,7 @@ import {
 } from "../shared/profileHelpers";
 import type {
   AccountMetadata,
+  CachedCurrentAccountStatus,
   CurrentAccountStatus,
   Profile,
   PublicState,
@@ -16,20 +17,22 @@ import type {
 } from "../shared/types";
 
 type AccountStatusState =
-  | { status: "loading" }
-  | { status: "success"; value: CurrentAccountStatus }
-  | { status: "error"; error: string };
+  | { status: "idle" }
+  | { status: "success"; value: CurrentAccountStatus };
 
 const app = document.getElementById("app");
 let state: PublicState | null = null;
-let accountStatus: AccountStatusState = { status: "loading" };
+let accountStatus: AccountStatusState = { status: "idle" };
 let message = "";
 let isError = false;
 
 void refresh();
 
 async function refresh(): Promise<void> {
-  const response = await sendMessage<PublicState>({ type: "GET_STATE" });
+  const [response] = await Promise.all([
+    sendMessage<PublicState>({ type: "GET_STATE" }),
+    loadCachedCurrentAccountStatus()
+  ]);
 
   if (!response.ok || !response.data) {
     renderShell(null);
@@ -38,26 +41,18 @@ async function refresh(): Promise<void> {
   }
 
   state = response.data;
-  accountStatus = { status: "loading" };
   renderShell(state);
-  void refreshCurrentAccountStatus();
 }
 
-async function refreshCurrentAccountStatus(): Promise<void> {
-  const response = await sendMessage<CurrentAccountStatus>({
-    type: "GET_CURRENT_ACCOUNT_STATUS"
+async function loadCachedCurrentAccountStatus(): Promise<void> {
+  const response = await sendMessage<CachedCurrentAccountStatus | null>({
+    type: "GET_CACHED_CURRENT_ACCOUNT_STATUS"
   });
 
-  if (response.ok && response.data) {
-    accountStatus = { status: "success", value: response.data };
-  } else {
-    accountStatus = {
-      status: "error",
-      error: response.error ?? "检测当前账号失败"
-    };
-  }
-
-  renderShellPreservingDraft(state);
+  accountStatus =
+    response.ok && response.data
+      ? { status: "success", value: response.data.status }
+      : { status: "idle" };
 }
 
 function renderShell(current: PublicState | null): void {
@@ -83,19 +78,6 @@ function renderShell(current: PublicState | null): void {
   bindVaultTools();
 }
 
-function renderShellPreservingDraft(current: PublicState | null): void {
-  const labelDraft = inputValue("profile-label");
-  renderShell(current);
-
-  if (labelDraft) {
-    const labelInput = document.querySelector<HTMLInputElement>("#profile-label");
-
-    if (labelInput) {
-      labelInput.value = labelDraft;
-    }
-  }
-}
-
 function layout(content: string): string {
   return `
     <div class="topbar">
@@ -103,7 +85,7 @@ function layout(content: string): string {
         <h1 class="title">GPT Switch</h1>
         <div class="subtle">本地加密保存 ChatGPT 会话快照，一键换号</div>
       </div>
-      <button id="refresh-detection" class="icon-btn" title="重新检测当前账号">↻</button>
+      <button id="refresh-state" class="icon-btn" title="刷新本地状态">↻</button>
     </div>
     <div id="message" class="message ${isError ? "error" : ""}">${escapeHtml(message)}</div>
     ${content}
@@ -166,25 +148,13 @@ function renderProfileCard(profile: Profile, isCurrent: boolean): string {
 }
 
 function renderCurrentAccountSection(current: PublicState | null): string {
-  if (accountStatus.status === "loading") {
+  if (accountStatus.status === "idle") {
     return `
       <section class="box">
         <div class="section-title">当前账号</div>
-        <div class="detected-card pending">
-          <div class="detected-title">正在检测当前账号...</div>
-          <div class="subtle">会尝试读取页面、session、JWT claim 和本地 cookie。</div>
-        </div>
-      </section>
-    `;
-  }
-
-  if (accountStatus.status === "error") {
-    return `
-      <section class="box">
-        <div class="section-title">当前账号</div>
-        <div class="detected-card warning">
-          <div class="detected-title">检测失败</div>
-          <div class="subtle">${escapeHtml(accountStatus.error)}</div>
+        <div class="detected-card">
+          <div class="detected-title">等待页面预热</div>
+          <div class="subtle">${escapeHtml(current?.lastError || "没有读到账号缓存；请保持 ChatGPT 页面打开并刷新，或检查扩展的 chatgpt.com 站点权限。")}</div>
         </div>
       </section>
     `;
@@ -290,10 +260,8 @@ function renderVaultTools(current: PublicState | null): string {
 }
 
 function bindBaseActions(): void {
-  document.getElementById("refresh-detection")?.addEventListener("click", () => {
-    accountStatus = { status: "loading" };
-    renderShellPreservingDraft(state);
-    void refreshCurrentAccountStatus();
+  document.getElementById("refresh-state")?.addEventListener("click", () => {
+    void refresh();
   });
 }
 
@@ -398,9 +366,8 @@ async function sendAndRefresh(
   state = response.data ?? state;
   message = successMessage;
   isError = false;
-  accountStatus = { status: "loading" };
+  await loadCachedCurrentAccountStatus();
   renderShell(state);
-  void refreshCurrentAccountStatus();
 }
 
 function sendMessage<T = unknown>(

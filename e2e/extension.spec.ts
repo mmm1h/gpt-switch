@@ -15,6 +15,7 @@ test("loads the extension, initializes local vault, and injects the ChatGPT page
   const harness = await launchExtension();
 
   try {
+    let accountDetectionRequests = 0;
     const subscriptionExpiry = new Date(Date.now() + 12 * 24 * 60 * 60 * 1000);
     const sessionCycleDate = new Date(Date.now() + 22 * 24 * 60 * 60 * 1000);
     const idToken = makeJwt({
@@ -29,10 +30,24 @@ test("loads the extension, initializes local vault, and injects the ChatGPT page
     });
     const chatPage = await harness.context.newPage();
     await chatPage.route("https://chatgpt.com/**", async (route) => {
-      if (route.request().url().endsWith("/api/auth/session")) {
+      const requestUrl = route.request().url();
+      if (
+        requestUrl.endsWith("/api/auth/session") ||
+        requestUrl.includes("/backend-api/subscriptions?account_id=acct_1") ||
+        requestUrl.includes("/backend-api/accounts/acct_1/settings") ||
+        requestUrl.includes("/backend-api/wham/accounts/check")
+      ) {
+        accountDetectionRequests += 1;
+      }
+
+      if (requestUrl.endsWith("/api/auth/session")) {
         await route.fulfill({
           status: 200,
           contentType: "application/json",
+          headers: {
+            "set-cookie":
+              "__Secure-next-auth.session-token=rotated-token; Path=/; Secure; HttpOnly; SameSite=Lax"
+          },
           body: JSON.stringify({
             user: {
               id: "user_1",
@@ -52,7 +67,7 @@ test("loads the extension, initializes local vault, and injects the ChatGPT page
         return;
       }
 
-      if (route.request().url().includes("/backend-api/subscriptions?account_id=acct_1")) {
+      if (requestUrl.includes("/backend-api/subscriptions?account_id=acct_1")) {
         await route.fulfill({
           status: route.request().headers().authorization ? 200 : 401,
           contentType: "application/json",
@@ -66,7 +81,7 @@ test("loads the extension, initializes local vault, and injects the ChatGPT page
         return;
       }
 
-      if (route.request().url().includes("/backend-api/accounts/acct_1/settings")) {
+      if (requestUrl.includes("/backend-api/accounts/acct_1/settings")) {
         await route.fulfill({
           status: route.request().headers().authorization ? 200 : 401,
           contentType: "application/json",
@@ -77,7 +92,7 @@ test("loads the extension, initializes local vault, and injects the ChatGPT page
         return;
       }
 
-      if (route.request().url().includes("/backend-api/wham/accounts/check")) {
+      if (requestUrl.includes("/backend-api/wham/accounts/check")) {
         await route.fulfill({
           status: route.request().headers().authorization ? 200 : 401,
           contentType: "application/json",
@@ -113,8 +128,6 @@ test("loads the extension, initializes local vault, and injects the ChatGPT page
         `
       });
     });
-    await chatPage.goto("https://chatgpt.com/");
-
     await harness.context.addCookies([
       {
         name: "__Secure-next-auth.session-token",
@@ -126,11 +139,27 @@ test("loads the extension, initializes local vault, and injects the ChatGPT page
         expires: Math.floor(Date.now() / 1000) + 3600
       }
     ]);
+    await chatPage.goto("https://chatgpt.com/");
+    await expect
+      .poll(() => accountDetectionRequests, { timeout: 5000 })
+      .toBeGreaterThan(0);
+    await harness.context.addCookies([
+      {
+        name: "_dd_s",
+        value: "changed-after-preload",
+        url: "https://chatgpt.com/",
+        secure: true,
+        sameSite: "Lax",
+        expires: Math.floor(Date.now() / 1000) + 3600
+      }
+    ]);
 
     const popup = await harness.context.newPage();
+    accountDetectionRequests = 0;
     await popup.goto(`chrome-extension://${harness.extensionId}/popup.html`);
 
     await expect(popup.getByRole("heading", { name: "GPT Switch" })).toBeVisible();
+    await expect(popup.getByRole("button", { name: "检测当前账号" })).toHaveCount(0);
     await expect(popup.getByRole("button", { name: "保存当前账号" })).toBeVisible();
     await expect(popup.locator("#profile-label")).toBeVisible();
     await expect(popup.locator("#profile-email")).toHaveCount(0);
@@ -140,6 +169,8 @@ test("loads the extension, initializes local vault, and injects the ChatGPT page
     await expect(popup.getByText("Team Name: helloword1")).toBeVisible();
     await expect(popup.getByText(/^有效期 1[12]天$/)).toBeVisible();
     await expect(popup.getByText("有效期 22天")).toHaveCount(0);
+    await popup.waitForTimeout(600);
+    expect(accountDetectionRequests).toBe(0);
 
     await popup.locator("#profile-label").fill("公司号");
     await popup.getByRole("button", { name: "保存当前账号" }).click();
@@ -165,6 +196,7 @@ test("loads the extension, initializes local vault, and injects the ChatGPT page
       return Math.round(button?.getBoundingClientRect().left ?? 0);
     });
 
+    accountDetectionRequests = 0;
     await host.evaluate((node) => {
       node.shadowRoot?.querySelector<HTMLButtonElement>("#fab")?.click();
     });
@@ -190,6 +222,8 @@ test("loads the extension, initializes local vault, and injects the ChatGPT page
         )
       )
       .toBe(true);
+    await chatPage.waitForTimeout(600);
+    expect(accountDetectionRequests).toBe(0);
 
     await chatPage.mouse.click(10, 10);
     await expect
@@ -210,7 +244,8 @@ test("shows a confirmation dialog when a workspace unavailable page is detected"
   try {
     const popup = await harness.context.newPage();
     await popup.goto(`chrome-extension://${harness.extensionId}/popup.html`);
-    await expect(popup.getByText("没有读到 ChatGPT 登录 cookie")).toBeVisible();
+    await expect(popup.getByText("等待页面预热")).toBeVisible();
+    await expect(popup.getByRole("button", { name: "检测当前账号" })).toHaveCount(0);
     await expect(popup.getByRole("button", { name: "保存当前账号" })).toHaveCount(0);
 
     const chatPage = await harness.context.newPage();

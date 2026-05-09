@@ -10,16 +10,16 @@ const CHATGPT_TAB_PATTERNS = [
   "https://chat.openai.com/*"
 ];
 
-export async function detectCurrentAccountMetadata(): Promise<AccountMetadata> {
-  const tab = await getPrimaryChatGptTab();
+export async function detectCurrentAccountMetadata(tabId?: number): Promise<AccountMetadata> {
+  const targetTabId = tabId ?? (await getPrimaryChatGptTab())?.id;
 
-  if (!tab?.id) {
+  if (!targetTabId) {
     return createUnavailableMetadata("没有打开的 ChatGPT 页面");
   }
 
   try {
     const [result] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
+      target: { tabId: targetTabId },
       func: detectAccountMetadataInPage
     });
 

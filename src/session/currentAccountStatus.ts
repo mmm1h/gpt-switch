@@ -3,11 +3,29 @@ import type { CookieSnapshot } from "../shared/types";
 export async function createCookieSnapshotFingerprint(
   snapshot: CookieSnapshot
 ): Promise<string> {
-  if (snapshot.cookies.length === 0) {
+  return createFingerprint(snapshot.cookies);
+}
+
+export async function createCookieSnapshotIdentityFingerprint(
+  snapshot: CookieSnapshot
+): Promise<string> {
+  const coreCookies = snapshot.cookies.filter(isCoreAuthCookie);
+
+  if (coreCookies.length === 0) {
     return "";
   }
 
-  const normalized = snapshot.cookies
+  return createFingerprint(coreCookies);
+}
+
+async function createFingerprint(
+  cookies: CookieSnapshot["cookies"]
+): Promise<string> {
+  if (cookies.length === 0) {
+    return "";
+  }
+
+  const normalized = cookies
     .map((cookie) => ({
       storeId: cookie.storeId ?? "",
       domain: cookie.domain,
@@ -42,6 +60,15 @@ export async function createCookieSnapshotFingerprint(
   return Array.from(new Uint8Array(hash))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function isCoreAuthCookie(cookie: CookieSnapshot["cookies"][number]): boolean {
+  const name = cookie.name.toLowerCase();
+
+  return (
+    name.includes("session") ||
+    /(?:access|refresh)[-_]?token/.test(name)
+  );
 }
 
 function stableStringify(value: unknown): string {

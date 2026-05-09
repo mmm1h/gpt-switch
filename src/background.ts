@@ -4,7 +4,10 @@ import {
   deleteManagedCookies
 } from "./session/cookieSnapshot";
 import { detectCurrentAccountMetadata } from "./session/accountDetector";
-import { createCookieSnapshotFingerprint } from "./session/currentAccountStatus";
+import {
+  createCookieSnapshotFingerprint,
+  createCookieSnapshotIdentityFingerprint
+} from "./session/currentAccountStatus";
 import { refreshChatGptTabs } from "./session/pageState";
 import { runSwitchTransaction } from "./session/switchTransaction";
 import { createId } from "./shared/ids";
@@ -17,6 +20,7 @@ import {
 } from "./shared/profileHelpers";
 import type {
   AccountMetadata,
+  CachedCurrentAccountStatus,
   CookieSnapshot,
   CurrentAccountMatchMethod,
   CurrentAccountStatus,
@@ -26,6 +30,10 @@ import type {
   RuntimeResponse,
   StoredState
 } from "./shared/types";
+import {
+  CHATGPT_TAB_PATTERNS,
+  CURRENT_ACCOUNT_STATUS_CACHE_KEY
+} from "./shared/constants";
 import {
   getStoredState,
   replaceStoredState,
@@ -38,8 +46,24 @@ import {
   unlockState
 } from "./security/vault";
 
+interface InternalCurrentAccountStatusCache extends CachedCurrentAccountStatus {
+  cookieFingerprint: string;
+}
+
 let activeKey: CryptoKey | null = null;
 let lastError: string | undefined;
+let currentAccountStatusCache: InternalCurrentAccountStatusCache | null = null;
+let currentAccountStatusRefreshPromise: Promise<InternalCurrentAccountStatusCache> | null = null;
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status !== "complete" || !isChatGptUrl(tab.url)) {
+    return;
+  }
+
+  globalThis.setTimeout(() => {
+    void preloadCurrentAccountStatusForTab(tabId, tab.url);
+  }, 1200);
+});
 
 chrome.runtime.onMessage.addListener((message: RuntimeMessage, sender, sendResponse) => {
   void handleMessage(message, sender)
@@ -61,10 +85,10 @@ async function handleMessage(
   switch (message.type) {
     case "GET_STATE":
       return getPublicState();
-    case "DETECT_CURRENT_ACCOUNT":
-      return detectCurrentAccountMetadata();
-    case "GET_CURRENT_ACCOUNT_STATUS":
-      return getCurrentAccountStatus();
+    case "GET_CACHED_CURRENT_ACCOUNT_STATUS":
+      return getCachedCurrentAccountStatus();
+    case "PRELOAD_CURRENT_ACCOUNT_STATUS":
+      return preloadCurrentAccountStatus(message.url, sender);
     case "SAVE_CURRENT_PROFILE":
       return saveCurrentProfile(message.payload);
     case "SWITCH_PROFILE":
@@ -96,50 +120,247 @@ async function getPublicState(): Promise<PublicState> {
   };
 }
 
-async function getCurrentAccountStatus(): Promise<CurrentAccountStatus> {
+async function preloadCurrentAccountStatus(
+  url: string,
+  sender: chrome.runtime.MessageSender
+): Promise<CachedCurrentAccountStatus> {
+  if (currentAccountStatusRefreshPromise) {
+    return toPublicStatusCache(await currentAccountStatusRefreshPromise);
+  }
+
+  return toPublicStatusCache(await refreshCurrentAccountStatusCache(sender, url));
+}
+
+async function preloadCurrentAccountStatusForTab(
+  tabId: number,
+  url?: string
+): Promise<void> {
+  try {
+    await refreshCurrentAccountStatusCache(
+      { tab: { id: tabId, url } as chrome.tabs.Tab },
+      url
+    );
+  } catch (error) {
+    lastError = formatError(error);
+  }
+}
+
+function isChatGptUrl(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+
+  try {
+    const url = new URL(value);
+    return url.hostname === "chatgpt.com" || url.hostname === "chat.openai.com";
+  } catch {
+    return false;
+  }
+}
+
+async function findOpenChatGptTab(): Promise<chrome.tabs.Tab | undefined> {
+  const [activeTab] = await chrome.tabs.query({
+    active: true,
+    currentWindow: true,
+    url: CHATGPT_TAB_PATTERNS
+  });
+
+  if (activeTab?.id) {
+    return activeTab;
+  }
+
+  const [anyTab] = await chrome.tabs.query({
+    url: CHATGPT_TAB_PATTERNS
+  });
+
+  return anyTab;
+}
+
+async function refreshCurrentAccountStatusCache(
+  sender?: chrome.runtime.MessageSender,
+  url?: string
+): Promise<InternalCurrentAccountStatusCache> {
+  if (currentAccountStatusRefreshPromise) {
+    return currentAccountStatusRefreshPromise;
+  }
+
+  currentAccountStatusRefreshPromise = createCurrentAccountStatusCache(sender, url)
+    .then((cache) => {
+      currentAccountStatusCache = cache;
+      void persistCurrentAccountStatusCache(cache);
+      return cache;
+    })
+    .finally(() => {
+      currentAccountStatusRefreshPromise = null;
+    });
+
+  return currentAccountStatusRefreshPromise;
+}
+
+async function getCachedCurrentAccountStatus(): Promise<CachedCurrentAccountStatus | null> {
+  currentAccountStatusCache ??= await loadCurrentAccountStatusCache();
+
+  if (!currentAccountStatusCache) {
+    return refreshCurrentAccountStatusCacheFromOpenTab();
+  }
+
+  const snapshot = await captureCurrentCookies();
+  const fingerprint = await getCacheCookieFingerprint(snapshot);
+
+  if (fingerprint !== currentAccountStatusCache.cookieFingerprint) {
+    await clearCurrentAccountStatusCache();
+    return refreshCurrentAccountStatusCacheFromOpenTab();
+  }
+
+  return toPublicStatusCache(currentAccountStatusCache);
+}
+
+async function refreshCurrentAccountStatusCacheFromOpenTab(): Promise<CachedCurrentAccountStatus | null> {
+  const tab = await findOpenChatGptTab();
+
+  if (!tab?.id) {
+    return null;
+  }
+
+  try {
+    return toPublicStatusCache(
+      await refreshCurrentAccountStatusCache({ tab }, tab.url)
+    );
+  } catch (error) {
+    lastError = formatError(error);
+    return null;
+  }
+}
+
+async function getVerifiedCurrentAccountStatusCache(
+  snapshot: CookieSnapshot
+): Promise<InternalCurrentAccountStatusCache | null> {
+  currentAccountStatusCache ??= await loadCurrentAccountStatusCache();
+
+  if (!currentAccountStatusCache) {
+    return null;
+  }
+
+  const fingerprint = await getCacheCookieFingerprint(snapshot);
+
+  if (fingerprint !== currentAccountStatusCache.cookieFingerprint) {
+    await clearCurrentAccountStatusCache();
+    return null;
+  }
+
+  return currentAccountStatusCache;
+}
+
+async function createCurrentAccountStatusCache(
+  sender?: chrome.runtime.MessageSender,
+  url?: string
+): Promise<InternalCurrentAccountStatusCache> {
+  const result = await getCurrentAccountStatus(sender?.tab?.id);
+  const postDetectionSnapshot = await captureCurrentCookies();
+  const postDetectionFingerprint = await getCacheCookieFingerprint(postDetectionSnapshot);
+
+  return {
+    status: result.status,
+    cachedAt: new Date().toISOString(),
+    tabId: sender?.tab?.id,
+    url: url || sender?.tab?.url,
+    cookieFingerprint: postDetectionFingerprint || result.cookieFingerprint
+  };
+}
+
+async function getCacheCookieFingerprint(snapshot: CookieSnapshot): Promise<string> {
+  return (
+    (await createCookieSnapshotIdentityFingerprint(snapshot)) ||
+    (await createCookieSnapshotFingerprint(snapshot))
+  );
+}
+
+function toPublicStatusCache(
+  cache: InternalCurrentAccountStatusCache
+): CachedCurrentAccountStatus {
+  return {
+    status: cache.status,
+    cachedAt: cache.cachedAt,
+    tabId: cache.tabId,
+    url: cache.url
+  };
+}
+
+async function loadCurrentAccountStatusCache(): Promise<InternalCurrentAccountStatusCache | null> {
+  const result = await chrome.storage.session.get(CURRENT_ACCOUNT_STATUS_CACHE_KEY);
+  const value = result[CURRENT_ACCOUNT_STATUS_CACHE_KEY] as
+    | InternalCurrentAccountStatusCache
+    | undefined;
+
+  if (!value?.status || typeof value.cookieFingerprint !== "string") {
+    return null;
+  }
+
+  return value;
+}
+
+async function persistCurrentAccountStatusCache(
+  cache: InternalCurrentAccountStatusCache
+): Promise<void> {
+  await chrome.storage.session.set({
+    [CURRENT_ACCOUNT_STATUS_CACHE_KEY]: cache
+  });
+}
+
+async function clearCurrentAccountStatusCache(): Promise<void> {
+  currentAccountStatusCache = null;
+  await chrome.storage.session.remove(CURRENT_ACCOUNT_STATUS_CACHE_KEY);
+}
+
+async function getCurrentAccountStatus(
+  tabId?: number
+): Promise<{ status: CurrentAccountStatus; cookieFingerprint: string }> {
   const { state, key } = await getReadyState();
   const snapshot = await captureCurrentCookies();
   const hasCurrentCookies = snapshot.cookies.length > 0;
+  const currentFingerprint = hasCurrentCookies
+    ? await createCookieSnapshotFingerprint(snapshot)
+    : "";
+  const cacheFingerprint = hasCurrentCookies
+    ? await getCacheCookieFingerprint(snapshot)
+    : "";
 
   let savedProfileId: string | undefined;
   let matchMethod: CurrentAccountMatchMethod = "none";
   let metadata: AccountMetadata | undefined;
 
-  if (hasCurrentCookies) {
-    const currentFingerprint = await createCookieSnapshotFingerprint(snapshot);
-    if (currentFingerprint) {
-      for (const profile of state.profiles) {
-        const payload = state.encryptedSnapshots[profile.encryptedCookieSnapshotId];
-        if (!payload) continue;
-        try {
-          const savedSnapshot = await decryptCookieSnapshot(key, payload);
-          const savedFingerprint = await createCookieSnapshotFingerprint(savedSnapshot);
-          
-          if (savedFingerprint === currentFingerprint) {
-            savedProfileId = profile.id;
-            matchMethod = "cookie";
-            
-            const timeUntilExpiry = profile.minCookieExpiresAt 
-              ? profile.minCookieExpiresAt - (Date.now() / 1000)
-              : 0;
-              
-            // 若距离过期超过7天，或者没有有效过期时间（旧版本遗留等），可信任本地缓存
-            if (!profile.minCookieExpiresAt || timeUntilExpiry > 7 * 24 * 60 * 60) {
-              metadata = profileToMetadata(profile);
-            }
-            break;
+  if (currentFingerprint) {
+    for (const profile of state.profiles) {
+      const payload = state.encryptedSnapshots[profile.encryptedCookieSnapshotId];
+      if (!payload) continue;
+      try {
+        const savedSnapshot = await decryptCookieSnapshot(key, payload);
+        const savedFingerprint = await createCookieSnapshotFingerprint(savedSnapshot);
+
+        if (savedFingerprint === currentFingerprint) {
+          savedProfileId = profile.id;
+          matchMethod = "cookie";
+
+          const timeUntilExpiry = profile.minCookieExpiresAt
+            ? profile.minCookieExpiresAt - Date.now() / 1000
+            : 0;
+
+          // 若距离过期超过7天，或者没有有效过期时间（旧版本遗留等），可信任本地缓存
+          if (!profile.minCookieExpiresAt || timeUntilExpiry > 7 * 24 * 60 * 60) {
+            metadata = profileToMetadata(profile);
           }
-        } catch {
-          // Corrupt snapshots should not block status checks for other profiles.
+          break;
         }
+      } catch {
+        // Corrupt snapshots should not block status checks for other profiles.
       }
     }
   }
 
   // 若通过 cookie 没有匹配到有效的缓存，必须走 DOM 扫描和后台网络请求
   if (!metadata) {
-    metadata = await detectCurrentAccountMetadata();
-    
+    metadata = await detectCurrentAccountMetadata(tabId);
+
     if (!savedProfileId) {
       const identityProfile = findProfileByAccountMetadata(state.profiles, metadata);
       if (identityProfile) {
@@ -150,26 +371,31 @@ async function getCurrentAccountStatus(): Promise<CurrentAccountStatus> {
   }
 
   return {
-    metadata,
-    savedProfileId,
-    matchMethod,
-    hasCurrentCookies,
-    canSave: hasCurrentCookies && metadata.metadataSource !== "unavailable"
+    status: {
+      metadata,
+      savedProfileId,
+      matchMethod,
+      hasCurrentCookies,
+      canSave: hasCurrentCookies && metadata.metadataSource !== "unavailable"
+    },
+    cookieFingerprint: cacheFingerprint
   };
 }
 
 async function saveCurrentProfile(payload: { label?: string }): Promise<PublicState> {
   const { state, key } = await getReadyState();
   const label = (payload.label ?? "").trim();
-  const metadata = await detectCurrentAccountMetadata();
   const snapshot = await captureCurrentCookies();
 
   if (snapshot.cookies.length === 0) {
     throw new Error("没有读到 ChatGPT/OpenAI cookie，请先登录后再保存");
   }
 
-  if (metadata.metadataSource === "unavailable") {
-    throw new Error("当前账号信息检测失败，请打开 ChatGPT 页面后再保存");
+  const cachedStatus = await getVerifiedCurrentAccountStatusCache(snapshot);
+  const metadata = cachedStatus?.status.metadata;
+
+  if (!metadata || !cachedStatus?.status.canSave || metadata.metadataSource === "unavailable") {
+    throw new Error("当前账号还没有完成页面预热，请刷新 ChatGPT 页面后再打开弹窗保存");
   }
 
   const profileId = createId("profile");
@@ -183,7 +409,8 @@ async function saveCurrentProfile(payload: { label?: string }): Promise<PublicSt
     color: createRandomProfileColor(),
     isDefaultPersonal: false,
     capturedAt: snapshot.capturedAt,
-    encryptedCookieSnapshotId: snapshotId
+    encryptedCookieSnapshotId: snapshotId,
+    minCookieExpiresAt: snapshot.minCookieExpiresAt
   };
   const existingMatch = await findExistingProfile(state, key, metadata, snapshot);
   const existingIndex = existingMatch
@@ -194,6 +421,7 @@ async function saveCurrentProfile(payload: { label?: string }): Promise<PublicSt
     [snapshotId]: encryptedSnapshot
   };
   let profiles: Profile[];
+  let savedProfileId: string;
 
   if (existingIndex >= 0) {
     const existing = state.profiles[existingIndex];
@@ -211,12 +439,14 @@ async function saveCurrentProfile(payload: { label?: string }): Promise<PublicSt
       color: existing.color || baseProfile.color,
       isDefaultPersonal: existing.isDefaultPersonal,
       capturedAt: snapshot.capturedAt,
-      encryptedCookieSnapshotId: snapshotId
+      encryptedCookieSnapshotId: snapshotId,
+      minCookieExpiresAt: snapshot.minCookieExpiresAt
     };
 
     profiles = state.profiles.map((profile, index) =>
       index === existingIndex ? updatedProfile : profile
     );
+    savedProfileId = updatedProfile.id;
   } else {
     const hasDefaultPersonal = state.profiles.some(
       (profile) => profile.isDefaultPersonal
@@ -231,6 +461,7 @@ async function saveCurrentProfile(payload: { label?: string }): Promise<PublicSt
         isDefaultPersonal
       }
     ];
+    savedProfileId = baseProfile.id;
   }
 
   await setStoredState({
@@ -238,6 +469,18 @@ async function saveCurrentProfile(payload: { label?: string }): Promise<PublicSt
     profiles,
     encryptedSnapshots
   });
+  currentAccountStatusCache = {
+    status: {
+      metadata,
+      savedProfileId,
+      matchMethod: existingMatch?.method ?? "identity",
+      hasCurrentCookies: true,
+      canSave: true
+    },
+    cachedAt: new Date().toISOString(),
+    cookieFingerprint: await getCacheCookieFingerprint(snapshot)
+  };
+  await persistCurrentAccountStatusCache(currentAccountStatusCache);
 
   return getPublicState();
 }
@@ -267,7 +510,13 @@ async function switchProfile(profileId: string): Promise<PublicState> {
     },
     validateTarget: async () => {
       try {
-        const response = await fetch("https://chatgpt.com/api/auth/session");
+        const response = await fetch("https://chatgpt.com/api/auth/session", {
+          credentials: "include",
+          cache: "no-store",
+          headers: {
+            accept: "application/json"
+          }
+        });
         if (!response.ok) return false;
         const text = await response.text();
         if (!text) return false;
@@ -285,6 +534,7 @@ async function switchProfile(profileId: string): Promise<PublicState> {
       await applyCookieSnapshot(rollbackSnapshot);
     }
   });
+  await clearCurrentAccountStatusCache();
 
   const { state: latest } = await getReadyState();
   await setStoredState({
@@ -323,6 +573,7 @@ async function deleteProfile(profileId: string): Promise<PublicState> {
     profiles: state.profiles.filter((item) => item.id !== profileId),
     encryptedSnapshots
   });
+  await clearCurrentAccountStatusCache();
 
   return getPublicState();
 }
@@ -343,6 +594,7 @@ async function rollbackLastSwitch(): Promise<PublicState> {
     ...state,
     rollbackSnapshot: undefined
   });
+  await clearCurrentAccountStatusCache();
 
   return getPublicState();
 }
@@ -356,6 +608,7 @@ async function importVault(payload: unknown): Promise<PublicState> {
   const state = await replaceStoredState(payload);
   activeKey = await unlockState(state);
   lastError = undefined;
+  await clearCurrentAccountStatusCache();
   return {
     hasVault: true,
     unlocked: true,

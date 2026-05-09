@@ -1,5 +1,5 @@
 import type {
-  CurrentAccountStatus,
+  CachedCurrentAccountStatus,
   PublicState,
   RuntimeMessage,
   RuntimeResponse
@@ -22,9 +22,28 @@ const WORKSPACE_PATTERNS = [
 let guardShown = false;
 let switcherHost: HTMLElement | null = null;
 let switcherRoot: ShadowRoot | null = null;
+let pageAccountStatusCache: CachedCurrentAccountStatus | null = null;
 
 void installFloatingSwitcher();
+scheduleAccountStatusPreload();
 scheduleWorkspaceScan();
+
+function scheduleAccountStatusPreload(): void {
+  window.setTimeout(() => {
+    void preloadCurrentAccountStatus();
+  }, 1000);
+}
+
+async function preloadCurrentAccountStatus(): Promise<void> {
+  const response = await sendMessage<CachedCurrentAccountStatus>({
+    type: "PRELOAD_CURRENT_ACCOUNT_STATUS",
+    url: location.href
+  });
+
+  if (response.ok && response.data) {
+    pageAccountStatusCache = response.data;
+  }
+}
 
 function scheduleWorkspaceScan(): void {
   window.setTimeout(scanWorkspaceStatus, 1200);
@@ -298,9 +317,11 @@ async function renderProfileList(): Promise<void> {
     return;
   }
 
-  const [stateResponse, accountStatusResponse] = await Promise.all([
+  const [stateResponse, cachedStatusResponse] = await Promise.all([
     sendMessage<PublicState>({ type: "GET_STATE" }),
-    sendMessage<CurrentAccountStatus>({ type: "GET_CURRENT_ACCOUNT_STATUS" })
+    sendMessage<CachedCurrentAccountStatus | null>({
+      type: "GET_CACHED_CURRENT_ACCOUNT_STATUS"
+    })
   ]);
 
   if (!stateResponse.ok || !stateResponse.data?.hasVault) {
@@ -318,14 +339,24 @@ async function renderProfileList(): Promise<void> {
     return;
   }
 
-  const currentProfileId = accountStatusResponse.ok
-    ? accountStatusResponse.data?.savedProfileId
-    : undefined;
+  const publicState = stateResponse.data;
+  const cachedStatus =
+    cachedStatusResponse.ok && cachedStatusResponse.data
+      ? cachedStatusResponse.data
+      : pageAccountStatusCache;
 
+  renderPanelProfiles(panel, publicState.profiles, cachedStatus?.status.savedProfileId);
+}
+
+function renderPanelProfiles(
+  panel: HTMLElement,
+  profiles: PublicState["profiles"],
+  currentProfileId?: string
+): void {
   panel.innerHTML = `
     <div class="panel-head"><div class="title">GPT Switch</div></div>
     <div class="list">
-    ${stateResponse.data.profiles
+    ${profiles
       .map((profile) => {
         const title = getProfileTitle(profile);
         const scope = isTeamProfile(profile)
@@ -353,6 +384,10 @@ async function renderProfileList(): Promise<void> {
     </div>
   `;
 
+  bindPanelSwitchButtons(panel);
+}
+
+function bindPanelSwitchButtons(panel: HTMLElement): void {
   for (const button of panel.querySelectorAll<HTMLButtonElement>(".switch")) {
     button.addEventListener("click", async () => {
       const profileId = button.dataset.profileId;

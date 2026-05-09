@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createCookieSnapshotFingerprint } from "../src/session/currentAccountStatus";
+import {
+  createCookieSnapshotFingerprint,
+  createCookieSnapshotIdentityFingerprint
+} from "../src/session/currentAccountStatus";
 import type { CookieSnapshot } from "../src/shared/types";
 
 describe("current account status helpers", () => {
@@ -46,6 +49,34 @@ describe("current account status helpers", () => {
 
     await expect(createCookieSnapshotFingerprint(first)).resolves.not.toBe(
       await createCookieSnapshotFingerprint(second)
+    );
+  });
+
+  it("keeps the identity fingerprint stable when non-auth cookies change", async () => {
+    const first = createSnapshot([
+      { name: "__Secure-next-auth.session-token", value: "same-session" },
+      { name: "_dd_s", value: "first-ui-cookie" }
+    ]);
+    const second = createSnapshot([
+      { name: "__Secure-next-auth.session-token", value: "same-session" },
+      { name: "_dd_s", value: "second-ui-cookie" }
+    ]);
+
+    await expect(createCookieSnapshotIdentityFingerprint(first)).resolves.toBe(
+      await createCookieSnapshotIdentityFingerprint(second)
+    );
+  });
+
+  it("changes the identity fingerprint when a core auth cookie changes", async () => {
+    const first = createSnapshot([
+      { name: "__Secure-next-auth.session-token", value: "old-session" }
+    ]);
+    const second = createSnapshot([
+      { name: "__Secure-next-auth.session-token", value: "new-session" }
+    ]);
+
+    await expect(createCookieSnapshotIdentityFingerprint(first)).resolves.not.toBe(
+      await createCookieSnapshotIdentityFingerprint(second)
     );
   });
 });

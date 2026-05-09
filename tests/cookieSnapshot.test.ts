@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCookieUrl,
   cookieKey,
+  getMinCookieExpiresAt,
   isManagedCookie,
   normalizeCookie
 } from "../src/session/cookieSnapshot";
@@ -52,4 +53,50 @@ describe("cookie snapshot helpers", () => {
     expect(isManagedCookie({ domain: "auth.openai.com" })).toBe(true);
     expect(isManagedCookie({ domain: ".example.com" })).toBe(false);
   });
+
+  it("uses core auth cookies for the profile expiry hint", () => {
+    expect(
+      getMinCookieExpiresAt([
+        createCookie({
+          name: "_dd_s",
+          expirationDate: 1_700_000_000
+        }),
+        createCookie({
+          name: "__Secure-next-auth.session-token",
+          expirationDate: 1_800_000_000
+        }),
+        createCookie({
+          name: "short-ui-cookie",
+          expirationDate: 1_600_000_000
+        })
+      ])
+    ).toBe(1_800_000_000);
+  });
+
+  it("does not show an expiry hint when no core auth cookie has a persistent expiry", () => {
+    expect(
+      getMinCookieExpiresAt([
+        createCookie({ name: "_dd_s", expirationDate: 1_700_000_000 }),
+        createCookie({ name: "__Host-next-auth.csrf-token" })
+      ])
+    ).toBeUndefined();
+  });
 });
+
+function createCookie(
+  overrides: Partial<ReturnType<typeof normalizeCookie>>
+): ReturnType<typeof normalizeCookie> {
+  return {
+    name: "session",
+    value: "secret",
+    domain: ".chatgpt.com",
+    hostOnly: false,
+    path: "/",
+    secure: true,
+    httpOnly: true,
+    sameSite: "lax",
+    session: false,
+    storeId: "0",
+    ...overrides
+  };
+}
