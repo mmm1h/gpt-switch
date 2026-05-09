@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
   "name": "GPT Account Switcher",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local encrypted ChatGPT account session switcher for Chrome and Edge.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtMjz14q2tZ0aSV8y0BPSOKmHNBu+tvP46OoMZ75rTneWlpmac/ZrjX+kOYWuO2VH+WCRJ+oiilL0Rfg0obDgK1lMMVEvyFgwwbNErzOzVHJMBfvgBDqyQETmPVfEb+JEu8kUNeIIRSEqDewP8WpJrSkOq3Q+MKMPp7j4q2WzcUYTh4KlgoZO+4l8MnXHHpPRvP9bqbC8FKZtKetdzdg0MfkfnxPMJocROzAuDiXUBoN4JszhKc3hqPeykUeyBAqKL3HvBKc/yGHvMjmlK2EOUHMmGLr1M5u5w307NTzIi51Yi/Y8ua8FA8L6kdgBqPj7a33MauDtzwGRP7DP0U3fywIDAQAB",
   "minimum_chrome_version": "116",
   "permissions": ["cookies", "storage", "tabs", "scripting", "alarms"],
   "host_permissions": [

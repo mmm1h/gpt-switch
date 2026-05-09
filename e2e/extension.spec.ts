@@ -9,6 +9,8 @@ interface ExtensionHarness {
   userDataDir: string;
 }
 
+const FIXED_EXTENSION_ID = "ionngapfgimmibmiahmgieegfcocndcn";
+
 test("loads the extension, initializes local vault, and injects the ChatGPT page switcher", async () => {
   const harness = await launchExtension();
 
@@ -96,13 +98,9 @@ async function launchExtension(): Promise<ExtensionHarness> {
     ]
   });
 
-  const [serviceWorker] = context.serviceWorkers();
-  const worker = serviceWorker ?? (await context.waitForEvent("serviceworker"));
-  const extensionId = new URL(worker.url()).host;
-
   return {
     context,
-    extensionId,
+    extensionId: FIXED_EXTENSION_ID,
     userDataDir
   };
 }

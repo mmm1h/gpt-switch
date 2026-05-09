@@ -48,6 +48,14 @@ Chrome/Edge 开发者模式下最稳的本地安装方式仍是：
 
 说明：Chrome 对“直接拖入 ZIP 安装”的支持并不稳定，未签名扩展通常需要加载解压目录；`.crx` 才更接近拖拽安装。
 
+本项目在 `manifest.json` 里固定了开发用 public key，因此本地开发加载的扩展 ID 固定为：
+
+```text
+ionngapfgimmibmiahmgieegfcocndcn
+```
+
+如果你之前安装过没有固定 ID 的旧版本，Chrome 会把新版本当成另一个扩展。处理方式是先在 `chrome://extensions/` 删除旧的重复项，只保留这个固定 ID 的版本；之后新构建不会再变成第二个扩展。
+
 `npm run e2e` 会先构建扩展，再用 Playwright 启动一个临时 Chromium 用户目录加载 `dist/`。当前自动验收覆盖：
 
 - 扩展能被 Chromium 加载。
