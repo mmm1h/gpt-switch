@@ -1,7 +1,7 @@
 # GPT Account Switcher
 
 <p align="center">
-  <img src="public/icons/icon128.png" alt="GPT Account Switcher" width="96">
+  <img src="public/icons/icon-128.png" alt="GPT Account Switcher" width="96">
 </p>
 
 <p align="center">
