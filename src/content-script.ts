@@ -82,7 +82,12 @@ function renderFloatingButton(): void {
     return;
   }
 
-  const iconUrl = chrome.runtime.getURL("icons/icon-48.png");
+  let iconUrl = "";
+  try {
+    iconUrl = chrome.runtime?.getURL("icons/icon-48.png") || "";
+  } catch {
+    // Ignore runtime errors gracefully
+  }
 
   switcherRoot.innerHTML = `
     <style>
@@ -229,7 +234,7 @@ function renderFloatingButton(): void {
       </div>
       <button id="fab" class="fab" title="GPT Account Switcher">
         <span class="fab-fallback" aria-hidden="true">↔</span>
-        <img src="${escapeAttribute(iconUrl)}" alt="" />
+        ${iconUrl ? `<img src="${escapeAttribute(iconUrl)}" alt="" />` : ""}
       </button>
     </div>
   `;

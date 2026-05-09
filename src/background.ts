@@ -12,7 +12,8 @@ import {
   createRandomProfileColor,
   findProfileByAccountMetadata,
   isTeamProfile,
-  metadataToProfileFields
+  metadataToProfileFields,
+  profileToMetadata
 } from "./shared/profileHelpers";
 import type {
   AccountMetadata,
@@ -97,15 +98,61 @@ async function getPublicState(): Promise<PublicState> {
 
 async function getCurrentAccountStatus(): Promise<CurrentAccountStatus> {
   const { state, key } = await getReadyState();
-  const metadata = await detectCurrentAccountMetadata();
   const snapshot = await captureCurrentCookies();
-  const match = await findExistingProfile(state, key, metadata, snapshot);
   const hasCurrentCookies = snapshot.cookies.length > 0;
+
+  let savedProfileId: string | undefined;
+  let matchMethod: CurrentAccountMatchMethod = "none";
+  let metadata: AccountMetadata | undefined;
+
+  if (hasCurrentCookies) {
+    const currentFingerprint = await createCookieSnapshotFingerprint(snapshot);
+    if (currentFingerprint) {
+      for (const profile of state.profiles) {
+        const payload = state.encryptedSnapshots[profile.encryptedCookieSnapshotId];
+        if (!payload) continue;
+        try {
+          const savedSnapshot = await decryptCookieSnapshot(key, payload);
+          const savedFingerprint = await createCookieSnapshotFingerprint(savedSnapshot);
+          
+          if (savedFingerprint === currentFingerprint) {
+            savedProfileId = profile.id;
+            matchMethod = "cookie";
+            
+            const timeUntilExpiry = profile.minCookieExpiresAt 
+              ? profile.minCookieExpiresAt - (Date.now() / 1000)
+              : 0;
+              
+            // 若距离过期超过7天，或者没有有效过期时间（旧版本遗留等），可信任本地缓存
+            if (!profile.minCookieExpiresAt || timeUntilExpiry > 7 * 24 * 60 * 60) {
+              metadata = profileToMetadata(profile);
+            }
+            break;
+          }
+        } catch {
+          // Corrupt snapshots should not block status checks for other profiles.
+        }
+      }
+    }
+  }
+
+  // 若通过 cookie 没有匹配到有效的缓存，必须走 DOM 扫描和后台网络请求
+  if (!metadata) {
+    metadata = await detectCurrentAccountMetadata();
+    
+    if (!savedProfileId) {
+      const identityProfile = findProfileByAccountMetadata(state.profiles, metadata);
+      if (identityProfile) {
+        savedProfileId = identityProfile.id;
+        matchMethod = "identity";
+      }
+    }
+  }
 
   return {
     metadata,
-    savedProfileId: match?.profile.id,
-    matchMethod: match?.method ?? "none",
+    savedProfileId,
+    matchMethod,
     hasCurrentCookies,
     canSave: hasCurrentCookies && metadata.metadataSource !== "unavailable"
   };

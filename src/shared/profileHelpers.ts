@@ -101,6 +101,22 @@ export function getPlanLabel(profile: Profile): string {
   return profile.planLabel || planLabelFor(profile.planType ?? "unknown");
 }
 
+export function profileToMetadata(profile: Profile): AccountMetadata {
+  return {
+    email: profile.email ?? "",
+    displayName: profile.displayName ?? "",
+    planType: profile.planType ?? "unknown",
+    planLabel: profile.planLabel ?? getPlanLabel(profile),
+    workspaceName: profile.workspaceName ?? "",
+    subscriptionExpiresAt: profile.subscriptionExpiresAt ?? "",
+    metadataDetectedAt: profile.metadataDetectedAt ?? new Date().toISOString(),
+    metadataSource: profile.metadataSource ?? "fallback",
+    accountId: profile.accountId ?? "",
+    organizationId: profile.organizationId ?? "",
+    userId: profile.userId ?? "",
+  };
+}
+
 export function isTeamProfile(profile: Profile): boolean {
   return (
     profile.planType === "team" ||
