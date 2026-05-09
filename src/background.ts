@@ -3,11 +3,22 @@ import {
   captureCurrentCookies,
   deleteManagedCookies
 } from "./session/cookieSnapshot";
+import { detectCurrentAccountMetadata } from "./session/accountDetector";
+import { createCookieSnapshotFingerprint } from "./session/currentAccountStatus";
 import { refreshChatGptTabs } from "./session/pageState";
 import { runSwitchTransaction } from "./session/switchTransaction";
 import { createId } from "./shared/ids";
+import {
+  createRandomProfileColor,
+  findProfileByAccountMetadata,
+  isTeamProfile,
+  metadataToProfileFields
+} from "./shared/profileHelpers";
 import type {
+  AccountMetadata,
   CookieSnapshot,
+  CurrentAccountMatchMethod,
+  CurrentAccountStatus,
   Profile,
   PublicState,
   RuntimeMessage,
@@ -49,14 +60,16 @@ async function handleMessage(
   switch (message.type) {
     case "GET_STATE":
       return getPublicState();
+    case "DETECT_CURRENT_ACCOUNT":
+      return detectCurrentAccountMetadata();
+    case "GET_CURRENT_ACCOUNT_STATUS":
+      return getCurrentAccountStatus();
     case "SAVE_CURRENT_PROFILE":
       return saveCurrentProfile(message.payload);
     case "SWITCH_PROFILE":
       return switchProfile(message.profileId);
     case "SWITCH_DEFAULT_PERSONAL":
       return switchDefaultPersonal();
-    case "SET_DEFAULT_PERSONAL":
-      return setDefaultPersonal(message.profileId);
     case "DELETE_PROFILE":
       return deleteProfile(message.profileId);
     case "ROLLBACK_LAST_SWITCH":
@@ -82,61 +95,101 @@ async function getPublicState(): Promise<PublicState> {
   };
 }
 
-async function saveCurrentProfile(payload: {
-  label: string;
-  emailHint: string;
-  color: string;
-  profileType: Profile["type"];
-  workspaceName: string;
-  isPaidAccount: boolean;
-  subscriptionExpiresAt: string;
-  isDefaultPersonal: boolean;
-}): Promise<PublicState> {
+async function getCurrentAccountStatus(): Promise<CurrentAccountStatus> {
   const { state, key } = await getReadyState();
-  const label = payload.label.trim();
+  const metadata = await detectCurrentAccountMetadata();
+  const snapshot = await captureCurrentCookies();
+  const match = await findExistingProfile(state, key, metadata, snapshot);
+  const hasCurrentCookies = snapshot.cookies.length > 0;
 
-  if (!label) {
-    throw new Error("账号标签不能为空");
-  }
+  return {
+    metadata,
+    savedProfileId: match?.profile.id,
+    matchMethod: match?.method ?? "none",
+    hasCurrentCookies,
+    canSave: hasCurrentCookies && metadata.metadataSource !== "unavailable"
+  };
+}
 
+async function saveCurrentProfile(payload: { label?: string }): Promise<PublicState> {
+  const { state, key } = await getReadyState();
+  const label = (payload.label ?? "").trim();
+  const metadata = await detectCurrentAccountMetadata();
   const snapshot = await captureCurrentCookies();
 
   if (snapshot.cookies.length === 0) {
     throw new Error("没有读到 ChatGPT/OpenAI cookie，请先登录后再保存");
   }
 
+  if (metadata.metadataSource === "unavailable") {
+    throw new Error("当前账号信息检测失败，请打开 ChatGPT 页面后再保存");
+  }
+
   const profileId = createId("profile");
   const snapshotId = createId("snapshot");
   const encryptedSnapshot = await encryptCookieSnapshot(key, snapshot);
-  const isDefaultPersonal = payload.isDefaultPersonal;
-  const profile: Profile = {
+  const profileFields = metadataToProfileFields(metadata);
+  const baseProfile: Profile = {
     id: profileId,
-    label,
-    emailHint: payload.emailHint.trim(),
-    color: normalizeColor(payload.color),
-    type: isDefaultPersonal ? "personal" : payload.profileType,
-    workspaceName:
-      payload.profileType === "workspace" ? payload.workspaceName.trim() : "",
-    isPaidAccount: payload.isPaidAccount,
-    subscriptionExpiresAt: normalizeSubscriptionExpiresAt(
-      payload.subscriptionExpiresAt
-    ),
-    isDefaultPersonal,
+    ...profileFields,
+    label: label || undefined,
+    color: createRandomProfileColor(),
+    isDefaultPersonal: false,
     capturedAt: snapshot.capturedAt,
     encryptedCookieSnapshotId: snapshotId
   };
+  const existingMatch = await findExistingProfile(state, key, metadata, snapshot);
+  const existingIndex = existingMatch
+    ? state.profiles.findIndex((profile) => profile.id === existingMatch.profile.id)
+    : -1;
+  const encryptedSnapshots = {
+    ...state.encryptedSnapshots,
+    [snapshotId]: encryptedSnapshot
+  };
+  let profiles: Profile[];
 
-  const profiles = state.profiles.map((item) =>
-    isDefaultPersonal ? { ...item, isDefaultPersonal: false } : item
-  );
+  if (existingIndex >= 0) {
+    const existing = state.profiles[existingIndex];
+
+    if (!existing) {
+      throw new Error("账号列表状态异常，请重试");
+    }
+
+    delete encryptedSnapshots[existing.encryptedCookieSnapshotId];
+
+    const updatedProfile: Profile = {
+      ...existing,
+      ...profileFields,
+      label: label || existing.label,
+      color: existing.color || baseProfile.color,
+      isDefaultPersonal: existing.isDefaultPersonal,
+      capturedAt: snapshot.capturedAt,
+      encryptedCookieSnapshotId: snapshotId
+    };
+
+    profiles = state.profiles.map((profile, index) =>
+      index === existingIndex ? updatedProfile : profile
+    );
+  } else {
+    const hasDefaultPersonal = state.profiles.some(
+      (profile) => profile.isDefaultPersonal
+    );
+    const isDefaultPersonal =
+      !hasDefaultPersonal && isLikelyPersonalProfile(baseProfile);
+
+    profiles = [
+      ...state.profiles,
+      {
+        ...baseProfile,
+        isDefaultPersonal
+      }
+    ];
+  }
 
   await setStoredState({
     ...state,
-    profiles: [...profiles, profile],
-    encryptedSnapshots: {
-      ...state.encryptedSnapshots,
-      [snapshotId]: encryptedSnapshot
-    }
+    profiles,
+    encryptedSnapshots
   });
 
   return getPublicState();
@@ -182,29 +235,15 @@ async function switchProfile(profileId: string): Promise<PublicState> {
 
 async function switchDefaultPersonal(): Promise<PublicState> {
   const { state } = await getReadyState();
-  const profile = state.profiles.find((item) => item.isDefaultPersonal);
+  const profile =
+    state.profiles.find((item) => item.isDefaultPersonal) ??
+    state.profiles.find(isLikelyPersonalProfile);
 
   if (!profile) {
-    throw new Error("还没有设置个人默认账号，请先在弹窗里标记一个");
+    throw new Error("没有可回退的个人账号，请先登录个人账号并保存快照");
   }
 
   return switchProfile(profile.id);
-}
-
-async function setDefaultPersonal(profileId: string): Promise<PublicState> {
-  const { state } = await getReadyState();
-  findProfile(state, profileId);
-
-  await setStoredState({
-    ...state,
-    profiles: state.profiles.map((profile) => ({
-      ...profile,
-      isDefaultPersonal: profile.id === profileId,
-      type: profile.id === profileId ? "personal" : profile.type
-    }))
-  });
-
-  return getPublicState();
 }
 
 async function deleteProfile(profileId: string): Promise<PublicState> {
@@ -316,20 +355,56 @@ function findProfile(state: StoredState, profileId: string): Profile {
   return profile;
 }
 
-function normalizeColor(color: string): string {
-  return /^#[0-9a-f]{6}$/i.test(color) ? color : "#176b5b";
-}
+async function findExistingProfile(
+  state: StoredState,
+  key: CryptoKey,
+  metadata: AccountMetadata,
+  snapshot: CookieSnapshot
+): Promise<{ profile: Profile; method: CurrentAccountMatchMethod } | undefined> {
+  const identityProfile = findProfileByAccountMetadata(state.profiles, metadata);
 
-function normalizeSubscriptionExpiresAt(value: string): string {
-  const trimmed = value.trim();
-
-  if (!trimmed) {
-    return "";
+  if (identityProfile) {
+    return { profile: identityProfile, method: "identity" };
   }
 
-  const date = new Date(trimmed);
+  const currentFingerprint = await createCookieSnapshotFingerprint(snapshot);
 
-  return Number.isNaN(date.getTime()) ? "" : trimmed;
+  if (!currentFingerprint) {
+    return undefined;
+  }
+
+  for (const profile of state.profiles) {
+    const payload = state.encryptedSnapshots[profile.encryptedCookieSnapshotId];
+
+    if (!payload) {
+      continue;
+    }
+
+    try {
+      const savedSnapshot = await decryptCookieSnapshot(key, payload);
+      const savedFingerprint = await createCookieSnapshotFingerprint(savedSnapshot);
+
+      if (savedFingerprint === currentFingerprint) {
+        return { profile, method: "cookie" };
+      }
+    } catch {
+      // Corrupt snapshots should not block status checks for other profiles.
+    }
+  }
+
+  return undefined;
+}
+
+function isLikelyPersonalProfile(profile: Profile): boolean {
+  if (isTeamProfile(profile) || profile.workspaceName) {
+    return false;
+  }
+
+  if (profile.planType) {
+    return ["free", "plus", "pro", "unknown"].includes(profile.planType);
+  }
+
+  return profile.type !== "workspace";
 }
 
 function formatError(error: unknown): string {

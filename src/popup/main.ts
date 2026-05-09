@@ -1,14 +1,28 @@
+import { getValidityView } from "../shared/dates";
+import {
+  getPlanLabel,
+  getProfileLabel,
+  getProfileTitle,
+  isTeamProfile
+} from "../shared/profileHelpers";
 import type {
+  AccountMetadata,
+  CurrentAccountStatus,
   Profile,
-  ProfileType,
   PublicState,
   RuntimeMessage,
   RuntimeResponse,
   StoredState
 } from "../shared/types";
 
+type AccountStatusState =
+  | { status: "loading" }
+  | { status: "success"; value: CurrentAccountStatus }
+  | { status: "error"; error: string };
+
 const app = document.getElementById("app");
 let state: PublicState | null = null;
+let accountStatus: AccountStatusState = { status: "loading" };
 let message = "";
 let isError = false;
 
@@ -24,7 +38,26 @@ async function refresh(): Promise<void> {
   }
 
   state = response.data;
+  accountStatus = { status: "loading" };
   renderShell(state);
+  void refreshCurrentAccountStatus();
+}
+
+async function refreshCurrentAccountStatus(): Promise<void> {
+  const response = await sendMessage<CurrentAccountStatus>({
+    type: "GET_CURRENT_ACCOUNT_STATUS"
+  });
+
+  if (response.ok && response.data) {
+    accountStatus = { status: "success", value: response.data };
+  } else {
+    accountStatus = {
+      status: "error",
+      error: response.error ?? "检测当前账号失败"
+    };
+  }
+
+  renderShellPreservingDraft(state);
 }
 
 function renderShell(current: PublicState | null): void {
@@ -32,10 +65,15 @@ function renderShell(current: PublicState | null): void {
     return;
   }
 
+  const currentProfileId =
+    accountStatus.status === "success"
+      ? accountStatus.value.savedProfileId
+      : undefined;
+
   app.innerHTML = layout(`
     <div class="panel">
-      ${renderProfileList(current?.profiles ?? [])}
-      ${renderSaveProfileForm()}
+      ${renderProfileList(current?.profiles ?? [], currentProfileId)}
+      ${renderCurrentAccountSection(current)}
       ${renderVaultTools(current)}
     </div>
   `);
@@ -45,123 +83,218 @@ function renderShell(current: PublicState | null): void {
   bindVaultTools();
 }
 
+function renderShellPreservingDraft(current: PublicState | null): void {
+  const labelDraft = inputValue("profile-label");
+  renderShell(current);
+
+  if (labelDraft) {
+    const labelInput = document.querySelector<HTMLInputElement>("#profile-label");
+
+    if (labelInput) {
+      labelInput.value = labelDraft;
+    }
+  }
+}
+
 function layout(content: string): string {
   return `
     <div class="topbar">
       <div>
         <h1 class="title">GPT Switch</h1>
-        <div class="subtle">本地自动加密保存 ChatGPT 会话快照</div>
+        <div class="subtle">本地加密保存 ChatGPT 会话快照，一键换号</div>
       </div>
+      <button id="refresh-detection" class="icon-btn" title="重新检测当前账号">↻</button>
     </div>
     <div id="message" class="message ${isError ? "error" : ""}">${escapeHtml(message)}</div>
     ${content}
   `;
 }
 
-function renderProfileList(profiles: Profile[]): string {
+function renderProfileList(profiles: Profile[], currentProfileId?: string): string {
   if (profiles.length === 0) {
     return `
       <div class="box empty">
-        <div style="font-weight:740;margin-bottom:4px;">还没有保存账号</div>
-        <div class="subtle">先手动登录 ChatGPT，然后点下面的“保存当前账号”。</div>
+        <div class="empty-title">还没有保存账号</div>
+        <div class="subtle">打开 ChatGPT 并登录后，这里会提示你保存当前账号。</div>
       </div>
     `;
   }
 
   return `
-    <div class="box">
+    <div class="profile-list">
       ${profiles
-        .map(
-          (profile) => `
-            <div class="profile">
-              <span class="dot" style="background:${escapeAttribute(profile.color)}"></span>
-              <div>
-                <div class="profile-title">
-                  <span>${escapeHtml(profile.label)}</span>
-                  ${profile.isDefaultPersonal ? `<span class="tag">个人默认</span>` : `<span class="tag">${profileTypeLabel(profile.type)}</span>`}
-                </div>
-                <div class="meta-line">
-                  <span class="meta-pill">${renderProfileScope(profile)}</span>
-                  <span class="meta-pill">${escapeHtml(profile.emailHint || "未填写邮箱提示")}</span>
-                </div>
-                ${renderValidity(profile)}
-                <div class="subtle" style="margin-top:6px;">保存于 ${formatDate(profile.capturedAt)}</div>
-                <div class="profile-actions">
-                  <button class="btn" data-action="switch" data-profile-id="${escapeAttribute(profile.id)}">切换</button>
-                  <button class="btn secondary" data-action="default" data-profile-id="${escapeAttribute(profile.id)}">设为个人</button>
-                  <button class="btn danger" data-action="delete" data-profile-id="${escapeAttribute(profile.id)}">删除</button>
-                </div>
-              </div>
-            </div>
-          `
-        )
+        .map((profile) => renderProfileCard(profile, profile.id === currentProfileId))
         .join("")}
     </div>
   `;
 }
 
-function renderSaveProfileForm(): string {
+function renderProfileCard(profile: Profile, isCurrent: boolean): string {
+  const label = getProfileLabel(profile);
+  const title = getProfileTitle(profile);
+  const planLabel = getPlanLabel(profile);
+  const scope = renderProfileScope(profile);
+  const tags = [
+    isCurrent ? `<span class="current-tag">当前</span>` : "",
+    label
+      ? `<span class="corner-tag" title="${escapeAttribute(label)}">${escapeHtml(label)}</span>`
+      : ""
+  ]
+    .filter(Boolean)
+    .join("");
+
   return `
-    <div class="box">
-      <div style="font-weight:740;margin-bottom:10px;">保存当前账号</div>
-      <div class="field">
-        <label for="profile-label">账号标签</label>
-        <input id="profile-label" class="input" placeholder="例如：个人号 / 公司号" />
+    <article class="profile-card ${isCurrent ? "current" : ""}" style="--profile-color:${escapeAttribute(profile.color)}">
+      <span class="color-bar" aria-hidden="true"></span>
+      ${tags ? `<div class="corner-tags">${tags}</div>` : ""}
+      <div class="profile-title" title="${escapeAttribute(title)}">${escapeHtml(title)}</div>
+      <div class="profile-meta">
+        <span class="plan-badge">${escapeHtml(planLabel)}</span>
+        <span>${scope}</span>
       </div>
-      <div class="field">
-        <label for="profile-email">邮箱提示</label>
-        <input id="profile-email" class="input" placeholder="可选，只作本地备注" />
+      ${renderValidity(profile)}
+      <div class="time-row">
+        <span>保存 ${formatDate(profile.capturedAt)}</span>
+        ${profile.lastUsedAt ? `<span>使用 ${formatDate(profile.lastUsedAt)}</span>` : ""}
       </div>
-      <div class="row">
-        <div class="field">
-          <label for="profile-type">类型</label>
-          <select id="profile-type" class="select">
-            <option value="personal">个人</option>
-            <option value="workspace">Team</option>
-          </select>
+      <div class="profile-actions">
+        <button class="btn" data-action="switch" data-profile-id="${escapeAttribute(profile.id)}">切换</button>
+        <button class="btn danger" data-action="delete" data-profile-id="${escapeAttribute(profile.id)}">删除</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderCurrentAccountSection(current: PublicState | null): string {
+  if (accountStatus.status === "loading") {
+    return `
+      <section class="box">
+        <div class="section-title">当前账号</div>
+        <div class="detected-card pending">
+          <div class="detected-title">正在检测当前账号...</div>
+          <div class="subtle">会尝试读取页面、session、JWT claim 和本地 cookie。</div>
         </div>
-        <div class="field">
-          <label for="profile-color">颜色</label>
-          <input id="profile-color" class="input" type="color" value="#176b5b" />
+      </section>
+    `;
+  }
+
+  if (accountStatus.status === "error") {
+    return `
+      <section class="box">
+        <div class="section-title">当前账号</div>
+        <div class="detected-card warning">
+          <div class="detected-title">检测失败</div>
+          <div class="subtle">${escapeHtml(accountStatus.error)}</div>
         </div>
-      </div>
+      </section>
+    `;
+  }
+
+  const status = accountStatus.value;
+  const savedProfile = current?.profiles.find(
+    (profile) => profile.id === status.savedProfileId
+  );
+
+  if (savedProfile) {
+    return `
+      <section class="box saved-current">
+        <div class="section-title">当前账号已保存</div>
+        ${renderAccountSummary(status.metadata, savedProfile)}
+        <div class="subtle">无需重复保存。匹配方式：${escapeHtml(renderMatchMethod(status.matchMethod))}</div>
+      </section>
+    `;
+  }
+
+  if (!status.hasCurrentCookies) {
+    return `
+      <section class="box">
+        <div class="section-title">当前账号</div>
+        <div class="detected-card warning">
+          <div class="detected-title">没有读到 ChatGPT 登录 cookie</div>
+          <div class="subtle">请先在 ChatGPT 页面登录账号，再回来保存。小饺子还没下锅。</div>
+        </div>
+      </section>
+    `;
+  }
+
+  if (!status.canSave) {
+    return `
+      <section class="box">
+        <div class="section-title">当前账号</div>
+        ${renderAccountSummary(status.metadata)}
+        <div class="subtle">账号信息检测失败，暂不保存 cookie 快照。请打开或刷新 ChatGPT 页面后重试。</div>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="box">
+      <div class="section-title">保存当前账号</div>
+      ${renderAccountSummary(status.metadata)}
       <div class="field">
-        <label for="profile-workspace">Team Name</label>
-        <input id="profile-workspace" class="input" placeholder="Team 账号填写，例如：helloword1" />
+        <label for="profile-label">账号标签（可空）</label>
+        <input id="profile-label" class="input" maxlength="36" placeholder="例如：公司号 / 备用号" />
       </div>
-      <label class="row" style="justify-content:flex-start;margin-bottom:10px;">
-        <input id="profile-paid" type="checkbox" style="flex:0;" />
-        <span class="subtle">订阅 / 付费账号</span>
-      </label>
-      <div class="field">
-        <label for="profile-expiry">账号有效期</label>
-        <input id="profile-expiry" class="input" type="datetime-local" />
-      </div>
-      <label class="row" style="justify-content:flex-start;margin-bottom:10px;">
-        <input id="profile-default" type="checkbox" style="flex:0;" />
-        <span class="subtle">设为工作区异常时回退的个人账号</span>
-      </label>
       <button id="save-profile" class="btn">保存当前账号</button>
+    </section>
+  `;
+}
+
+function renderAccountSummary(metadata: AccountMetadata, profile?: Profile): string {
+  const title =
+    metadata.email ||
+    profile?.email ||
+    metadata.displayName ||
+    profile?.displayName ||
+    profile?.label ||
+    "未识别账号";
+  const planLabel =
+    metadata.planLabel && metadata.planLabel !== "UNKNOWN"
+      ? metadata.planLabel
+      : profile
+        ? getPlanLabel(profile)
+        : "UNKNOWN";
+  const workspaceName = metadata.workspaceName || profile?.workspaceName || "";
+  const scope = workspaceName
+    ? `Team Name: ${workspaceName}`
+    : profile
+      ? renderProfileScope(profile).replace(/<[^>]*>/g, "")
+      : "Personal";
+  const expiry = metadata.subscriptionExpiresAt || profile?.subscriptionExpiresAt || "";
+  const validity = getValidityView(expiry);
+  const warning =
+    metadata.metadataSource === "unavailable" || metadata.error ? " warning" : "";
+
+  return `
+    <div class="detected-card${warning}">
+      <div class="detected-title">${escapeHtml(title)}</div>
+      <div class="detected-grid">
+        <span class="plan-badge">${escapeHtml(planLabel)}</span>
+        <span>${escapeHtml(scope)}</span>
+        <span>${escapeHtml(validity.label)}</span>
+      </div>
+      <div class="subtle">来源：${escapeHtml(metadata.metadataSource)}${metadata.error ? ` · ${escapeHtml(metadata.error)}` : ""}</div>
     </div>
   `;
 }
 
 function renderVaultTools(current: PublicState | null): string {
   return `
-    <div class="box">
-      <div class="row">
-        <button id="rollback" class="btn secondary" ${current?.hasRollback ? "" : "disabled"}>回滚上次切换</button>
-        <button id="export-vault" class="btn ghost">导出备份</button>
-      </div>
-      <div style="height:8px;"></div>
-      <button id="import-vault" class="btn ghost">导入加密备份</button>
+    <section class="box tools">
+      <button id="rollback" class="btn secondary" ${current?.hasRollback ? "" : "disabled"}>回滚上次切换</button>
+      <button id="export-vault" class="btn ghost">导出备份</button>
+      <button id="import-vault" class="btn ghost">导入备份</button>
       <input id="import-file" class="hidden" type="file" accept="application/json,.json" />
-    </div>
+    </section>
   `;
 }
 
 function bindBaseActions(): void {
-  // No manual unlock step: the extension manages a local encryption key.
+  document.getElementById("refresh-detection")?.addEventListener("click", () => {
+    accountStatus = { status: "loading" };
+    renderShellPreservingDraft(state);
+    void refreshCurrentAccountStatus();
+  });
 }
 
 function bindProfileActions(): void {
@@ -179,14 +312,6 @@ function bindProfileActions(): void {
         return;
       }
 
-      if (action === "default") {
-        await sendAndRefresh(
-          { type: "SET_DEFAULT_PERSONAL", profileId },
-          "已设为个人默认账号"
-        );
-        return;
-      }
-
       if (action === "delete") {
         if (!confirm("确定删除这个账号快照吗？这个动作不能撤销。")) {
           return;
@@ -201,29 +326,11 @@ function bindProfileActions(): void {
 function bindSaveProfile(): void {
   document.getElementById("save-profile")?.addEventListener("click", async () => {
     const label = inputValue("profile-label");
-    const emailHint = inputValue("profile-email");
-    const color = inputValue("profile-color") || "#176b5b";
-    const profileType = inputValue("profile-type") as ProfileType;
-    const workspaceName = inputValue("profile-workspace");
-    const isPaidAccount =
-      document.querySelector<HTMLInputElement>("#profile-paid")?.checked ?? false;
-    const subscriptionExpiresAt = inputValue("profile-expiry");
-    const isDefaultPersonal =
-      document.querySelector<HTMLInputElement>("#profile-default")?.checked ?? false;
 
     await sendAndRefresh(
       {
         type: "SAVE_CURRENT_PROFILE",
-        payload: {
-          label,
-          emailHint,
-          color,
-          profileType,
-          workspaceName,
-          isPaidAccount,
-          subscriptionExpiresAt,
-          isDefaultPersonal
-        }
+        payload: { label }
       },
       "当前账号已保存"
     );
@@ -291,7 +398,9 @@ async function sendAndRefresh(
   state = response.data ?? state;
   message = successMessage;
   isError = false;
+  accountStatus = { status: "loading" };
   renderShell(state);
+  void refreshCurrentAccountStatus();
 }
 
 function sendMessage<T = unknown>(
@@ -312,7 +421,7 @@ function sendMessage<T = unknown>(
 }
 
 function inputValue(id: string): string {
-  return document.querySelector<HTMLInputElement | HTMLSelectElement>(`#${id}`)?.value ?? "";
+  return document.querySelector<HTMLInputElement>(`#${id}`)?.value ?? "";
 }
 
 function setMessage(value: string, error: boolean): void {
@@ -326,70 +435,70 @@ function setMessage(value: string, error: boolean): void {
   }
 }
 
-function profileTypeLabel(type: ProfileType): string {
-  if (type === "personal") {
-    return "个人";
-  }
-
-  if (type === "workspace") {
-    return "Team";
-  }
-
-  return "普通";
-}
-
 function renderProfileScope(profile: Profile): string {
-  if (profile.type === "workspace") {
-    return `Team Name: ${escapeHtml(profile.workspaceName || "未填写")}`;
+  if (isTeamProfile(profile)) {
+    return `Team Name: ${escapeHtml(profile.workspaceName || "未知")}`;
   }
 
-  return "个人账号";
+  return "Personal";
 }
 
 function renderValidity(profile: Profile): string {
-  if (!profile.isPaidAccount && !profile.subscriptionExpiresAt) {
+  const shouldShow =
+    Boolean(profile.subscriptionExpiresAt) ||
+    Boolean(profile.isPaidAccount) ||
+    Boolean(profile.planType && profile.planType !== "free" && profile.planType !== "unknown");
+
+  if (!shouldShow) {
     return "";
   }
 
-  if (!profile.subscriptionExpiresAt) {
-    return `<div class="validity"><span class="calendar-icon"></span><strong>有效期未填写</strong><span class="validity-date">付费账号</span></div>`;
+  const view = getValidityView(profile.subscriptionExpiresAt);
+  const percent = getValidityPercent(profile.subscriptionExpiresAt, view.status);
+
+  return `
+    <div class="validity ${view.status === "expired" ? "expired" : ""} ${view.status === "unknown" ? "unknown" : ""}">
+      <div class="validity-line">
+        <strong>${escapeHtml(view.label)}</strong>
+        <span>${escapeHtml(view.exact || "未解析到日期")}</span>
+      </div>
+      <span class="validity-track"><span style="width:${percent}%"></span></span>
+    </div>
+  `;
+}
+
+function renderMatchMethod(method: CurrentAccountStatus["matchMethod"]): string {
+  if (method === "identity") {
+    return "账号信息";
   }
 
-  const expiry = new Date(profile.subscriptionExpiresAt);
+  if (method === "cookie") {
+    return "cookie 快照";
+  }
+
+  return "未匹配";
+}
+
+function getValidityPercent(value: string | undefined, status: string): number {
+  if (status === "expired") {
+    return 100;
+  }
+
+  if (status === "unknown" || !value) {
+    return 18;
+  }
+
+  const expiry = new Date(value);
 
   if (Number.isNaN(expiry.getTime())) {
-    return "";
+    return 18;
   }
 
   const remainingDays = Math.ceil(
     (expiry.getTime() - Date.now()) / (24 * 60 * 60 * 1000)
   );
-  const expired = remainingDays < 0;
-  const text = expired ? "已过期" : `有效期 ${Math.max(remainingDays, 0)}天`;
 
-  return `
-    <div class="validity ${expired ? "expired" : ""}">
-      <span class="calendar-icon"></span>
-      <strong>${text}</strong>
-      <span class="validity-date">${formatExactDate(profile.subscriptionExpiresAt)}</span>
-    </div>
-  `;
-}
-
-function formatExactDate(value: string): string {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hour = String(date.getHours()).padStart(2, "0");
-  const minute = String(date.getMinutes()).padStart(2, "0");
-
-  return `${year}-${month}-${day} ${hour}:${minute}`;
+  return Math.max(8, Math.min(100, Math.round((remainingDays / 30) * 100)));
 }
 
 function formatDate(value: string): string {

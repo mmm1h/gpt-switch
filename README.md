@@ -7,15 +7,16 @@ Chrome / Edge MV3 扩展，用本地加密 vault 保存多个 ChatGPT 登录会�
 - 保存当前已登录的 ChatGPT / OpenAI cookie 快照，包括 `HttpOnly` cookie。
 - 用扩展本地自动密钥加密保存快照，不需要输入口令，不保存账号密码。
 - 在扩展弹窗里切换账号。
-- 保存账号时可标记个人 / Team，并记录 Team Name、订阅/付费账号有效期。
-- 标记一个“个人默认账号”，当工作区到期、解散或不可访问时，页面会提示是否切回个人账号。
+- 保存账号时自动检测邮箱、套餐、Team Name 和可解析的订阅有效期；账号标签可填可不填。
+- 当前账号已经保存过时，弹窗只显示“当前账号已保存”，不再提示重复保存。
+- 当工作区到期、解散或不可访问时，页面会提示是否切回已保存的个人账号。
 - 支持导出 / 导入加密 vault。
 
 ## 不能做什么
 
 - 不保存密码。
 - 不绕过 2FA、验证码、风控或访问限制。
-- 不调用 ChatGPT 私有接口。
+- 不调用 ChatGPT 私有接口做账号操作；账号检测只做只读、尽力而为的轻量读取。
 - 不做云同步。
 
 ## 开发
@@ -37,7 +38,7 @@ npm run build
 npm run package:zip
 ```
 
-当前文件名形如 `release/gpt-account-switcher-v0.1.0.zip`。ZIP 根目录直接包含 `manifest.json`、`background.js`、`popup.html` 等扩展文件。
+当前文件名形如 `release/gpt-account-switcher-v0.1.4.zip`。ZIP 根目录直接包含 `manifest.json`、`background.js`、`popup.html` 等扩展文件。
 
 Chrome/Edge 开发者模式下最稳的本地安装方式仍是：
 
@@ -60,8 +61,10 @@ ionngapfgimmibmiahmgieegfcocndcn
 
 - 扩展能被 Chromium 加载。
 - popup 能初始化本地加密 vault。
-- popup 能显示 Team Name 和账号有效期字段。
-- ChatGPT 页面能注入右下角 `GPT` 浮动入口。
+- popup 能自动显示当前账号检测预览；账号已保存时隐藏保存入口。
+- 保存账号时只需要可选标签，账号卡片顶部显示邮箱、套餐、Team/Personal 和有效期状态。
+- ChatGPT 页面能注入右下角扩展 icon 浮动入口。
+- 页面浮动入口使用扩展 icon，面板支持点击页面空白区域关闭。
 - 工作区不可用页面会显示“切回个人账号”确认弹窗。
 
 如果本机缺 Playwright 浏览器，可先运行：
@@ -71,6 +74,23 @@ npx playwright install chromium
 ```
 
 真实账号 A/B 切换仍需要手动登录准备会话，自动测试不会保存密码、绕过 2FA、验证码或风控。
+
+### 连接真实 Chrome 排查
+
+普通已打开的 Chrome 如果没有 `--remote-debugging-port`，Playwright 不能直接接管。推荐用独立调试 profile：
+
+```powershell
+npm run build
+npm run chrome:debug
+```
+
+在打开的 debug Chrome 里登录 ChatGPT 后运行：
+
+```powershell
+npm run e2e:chrome
+```
+
+这个路径会连接 `http://127.0.0.1:9222`，用于快速检查真实页面里的浮动入口、面板开合和当前扩展加载状态。主流程 CI 仍使用隔离的 `npm run e2e`。
 
 ## 本地加载
 
@@ -99,32 +119,22 @@ git push origin v0.1.0
 
 Actions 完成后，GitHub Release 里会带可下载 ZIP。
 
-## 参考项目取舍
-
-参考过 [kieranchan/GPT-switcher](https://github.com/kieranchan/GPT-switcher)。可借鉴方向：
-
-- 发布形态：用 GitHub Release 分发 ZIP。
-- 产品体验：账号列表、标签/筛选、工作区信息、套餐徽章、导入导出。
-- 测试思路：用浏览器自动化覆盖 popup 主要交互。
-
-暂不直接采用的部分：
-
-- 它以 `__Secure-next-auth.session-token` 为核心保存账号；本项目保留“完整 cookie 快照 + 加密 vault”，更适合处理 ChatGPT/OpenAI 登录链路变化。
-- 它的导出数据偏明文账号 token；本项目导出本地密钥加密后的 vault。
-- 它会从页面结构/接口推断 Team workspace 信息；本项目 v1 不依赖 ChatGPT 私有接口，只做工作区不可用检测和个人账号回退。
-
 ## 使用流程
 
 1. 手动登录 ChatGPT 账号 A。
 2. 打开扩展弹窗。
-3. 填写账号标签、个人/Team、Team Name、订阅有效期等信息，点击“保存当前账号”。
+3. 等待账号预览完成；如果当前账号还没保存，账号标签可填可空，点击“保存当前账号”。
 4. 手动切换登录账号 B，再保存第二个账号。
-5. 之后在扩展弹窗或页面右下角 `GPT` 按钮里点击账号切换。
+5. 之后在扩展弹窗或页面右下角浮动按钮里点击账号切换。
+
+## 自动保存策略
+
+技术上扩展可以在检测到新账号后自动保存 cookie 快照，但 v1 采用提示式保存：只有未保存账号才展示保存入口，仍由用户主动点击。这样能避免误保存临时账号、测试账号或别人短暂登录的账号，隐私边界更稳一点。
 
 ## 安全边界
 
-扩展需要 `cookies` 权限和 ChatGPT / OpenAI 域名权限，因为核心功能就是读取并恢复这些域名的登录 cookie。cookie value 会进入本地密钥加密 vault；profile 标签、邮箱提示、颜色、Team Name、订阅有效期和时间戳是明文元数据。
+扩展需要 `cookies` 权限和 ChatGPT / OpenAI 域名权限，因为核心功能就是读取并恢复这些域名的登录 cookie。cookie value 会进入本地密钥加密 vault；账号邮箱、标签、颜色、Team Name、订阅有效期和时间戳是明文元数据。
 
-取消口令后，使用体验更轻，但本地扩展存储泄漏时不能再依赖用户口令做第二道保护。这个项目默认按个人本机工具处理，不做云同步。
+取消口令后，使用体验更轻，但本地扩展存储泄漏时不能再依赖用户口令做第二道保护。账号邮箱、套餐、Team Name 和有效期属于明文元数据；cookie value 仍保存在本地密钥加密 vault 中。这个项目默认按个人本机工具处理，不做云同步。
 
 如果 ChatGPT 登录机制变更，旧快照可能会失效。此时需要手动重新登录并刷新保存账号。

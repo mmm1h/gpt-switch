@@ -62,6 +62,16 @@
         font-weight: 760;
       }
 
+      .icon-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        color: #176b5b;
+        background: rgba(23, 107, 91, 0.1);
+        font-size: 17px;
+        font-weight: 760;
+      }
+
       .subtle {
         color: #667085;
         font-size: 12px;
@@ -300,9 +310,206 @@
 
       .profile-actions {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 6px;
         margin-top: 8px;
+      }
+
+      .section-title,
+      .empty-title {
+        font-weight: 760;
+        margin-bottom: 10px;
+      }
+
+      .profile-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .profile-card {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid rgba(102, 112, 133, 0.22);
+        border-radius: 8px;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .profile-card.current {
+        border-color: rgba(23, 107, 91, 0.42);
+        box-shadow: 0 0 0 1px rgba(23, 107, 91, 0.1);
+      }
+
+      .color-bar {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 4px;
+        background: var(--profile-color, #176b5b);
+      }
+
+      .corner-tags {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        display: flex;
+        max-width: 132px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 4px;
+      }
+
+      .corner-tag,
+      .current-tag {
+        max-width: 96px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        border-radius: 999px;
+        padding: 2px 7px;
+        background: rgba(23, 107, 91, 0.12);
+        color: #176b5b;
+        font-size: 11px;
+        font-weight: 720;
+      }
+
+      .current-tag {
+        background: rgba(37, 99, 235, 0.12);
+        color: #2563eb;
+      }
+
+      .profile-card .profile-title {
+        display: block;
+        max-width: 220px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        padding-right: 104px;
+        font-size: 14px;
+        font-weight: 760;
+      }
+
+      .profile-meta,
+      .detected-grid,
+      .time-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+        color: #5b6575;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .plan-badge {
+        border-radius: 999px;
+        padding: 2px 7px;
+        background: rgba(23, 107, 91, 0.12);
+        color: #176b5b;
+        font-size: 11px;
+        font-weight: 760;
+      }
+
+      .time-row {
+        justify-content: space-between;
+        color: #667085;
+      }
+
+      .detected-card {
+        display: grid;
+        gap: 4px;
+        margin-bottom: 10px;
+        border: 1px solid rgba(23, 107, 91, 0.22);
+        border-radius: 8px;
+        padding: 10px;
+        background: rgba(23, 107, 91, 0.06);
+      }
+
+      .detected-card.pending {
+        border-color: rgba(37, 99, 235, 0.22);
+        background: rgba(37, 99, 235, 0.06);
+      }
+
+      .detected-card.warning {
+        border-color: rgba(194, 65, 12, 0.28);
+        background: rgba(194, 65, 12, 0.07);
+      }
+
+      .saved-current .detected-card {
+        margin-bottom: 8px;
+      }
+
+      .detected-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 760;
+      }
+
+      .validity {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 7px;
+      }
+
+      .validity-line {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .validity-line span {
+        color: #526173;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      .validity-track {
+        overflow: hidden;
+        height: 5px;
+        border-radius: 999px;
+        background: rgba(23, 107, 91, 0.16);
+      }
+
+      .validity-track span {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: currentColor;
+      }
+
+      .validity.unknown .validity-track span {
+        opacity: 0.45;
+      }
+
+      .tools {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .profile-card {
+          background: rgba(255, 255, 255, 0.05);
+        }
+
+        .corner-tag,
+        .plan-badge {
+          color: #7ee2cc;
+        }
+
+        .current-tag {
+          color: #9db7ff;
+        }
+
+        .profile-meta,
+        .detected-grid,
+        .time-row {
+          color: #a5adbb;
+        }
+
+        .validity-line span {
+          color: #b5bdca;
+        }
       }
 
       .message {

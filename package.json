@@ -1,6 +1,6 @@
 {
   "name": "gpt-account-switcher",
-  "version": "0.1.1",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,6 +8,8 @@
     "package:zip": "node scripts/create-extension-zip.mjs",
     "test": "vitest run",
     "e2e": "npm run build && playwright test -c playwright.config.ts",
+    "e2e:chrome": "npm run build && playwright test -c playwright.chrome.config.ts",
+    "chrome:debug": "powershell -ExecutionPolicy Bypass -File scripts/start-debug-chrome.ps1",
     "dev": "vite build --watch"
   },
   "devDependencies": {

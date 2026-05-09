@@ -1,9 +1,52 @@
 export type ProfileType = "personal" | "workspace" | "normal";
+export type PlanType =
+  | "free"
+  | "plus"
+  | "pro"
+  | "team"
+  | "business"
+  | "enterprise"
+  | "edu"
+  | "unknown";
+
+export type MetadataSource =
+  | "session"
+  | "bootstrap"
+  | "jwt"
+  | "wham"
+  | "dom"
+  | "fallback"
+  | "unavailable"
+  | (string & {});
+
+export interface AccountMetadata {
+  email: string;
+  displayName: string;
+  planType: PlanType;
+  planLabel: string;
+  workspaceName: string;
+  subscriptionExpiresAt: string;
+  metadataDetectedAt: string;
+  metadataSource: MetadataSource;
+  accountId?: string;
+  organizationId?: string;
+  userId?: string;
+  error?: string;
+}
 
 export interface Profile {
   id: string;
-  label: string;
-  emailHint: string;
+  label?: string;
+  emailHint?: string;
+  email?: string;
+  displayName?: string;
+  planType?: PlanType;
+  planLabel?: string;
+  metadataDetectedAt?: string;
+  metadataSource?: MetadataSource;
+  accountId?: string;
+  organizationId?: string;
+  userId?: string;
   color: string;
   type: ProfileType;
   workspaceName?: string;
@@ -67,24 +110,28 @@ export interface PublicState {
   lastError?: string;
 }
 
+export type CurrentAccountMatchMethod = "identity" | "cookie" | "none";
+
+export interface CurrentAccountStatus {
+  metadata: AccountMetadata;
+  savedProfileId?: string;
+  matchMethod: CurrentAccountMatchMethod;
+  hasCurrentCookies: boolean;
+  canSave: boolean;
+}
+
 export type RuntimeMessage =
   | { type: "GET_STATE" }
+  | { type: "DETECT_CURRENT_ACCOUNT" }
+  | { type: "GET_CURRENT_ACCOUNT_STATUS" }
   | {
       type: "SAVE_CURRENT_PROFILE";
       payload: {
-        label: string;
-        emailHint: string;
-        color: string;
-        profileType: ProfileType;
-        workspaceName: string;
-        isPaidAccount: boolean;
-        subscriptionExpiresAt: string;
-        isDefaultPersonal: boolean;
+        label?: string;
       };
     }
   | { type: "SWITCH_PROFILE"; profileId: string }
   | { type: "SWITCH_DEFAULT_PERSONAL" }
-  | { type: "SET_DEFAULT_PERSONAL"; profileId: string }
   | { type: "DELETE_PROFILE"; profileId: string }
   | { type: "ROLLBACK_LAST_SWITCH" }
   | { type: "EXPORT_VAULT" }
