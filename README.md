@@ -22,10 +22,45 @@ Chrome / Edge MV3 扩展，用本地加密 vault 保存多个 ChatGPT 登录会�
 ```powershell
 npm install
 npm test
+npm run e2e
 npm run build
+npm run package:zip
 ```
 
 构建产物在 `dist/`。
+
+发布 ZIP 会生成到 `release/`：
+
+```powershell
+npm run build
+npm run package:zip
+```
+
+当前文件名形如 `release/gpt-account-switcher-v0.1.0.zip`。ZIP 根目录直接包含 `manifest.json`、`background.js`、`popup.html` 等扩展文件。
+
+Chrome/Edge 开发者模式下最稳的本地安装方式仍是：
+
+1. 解压 ZIP 到一个文件夹。
+2. 打开 `chrome://extensions/` 或 `edge://extensions/`。
+3. 开启开发者模式。
+4. 选择“加载已解压的扩展”并选中解压后的文件夹。
+
+说明：Chrome 对“直接拖入 ZIP 安装”的支持并不稳定，未签名扩展通常需要加载解压目录；`.crx` 才更接近拖拽安装。
+
+`npm run e2e` 会先构建扩展，再用 Playwright 启动一个临时 Chromium 用户目录加载 `dist/`。当前自动验收覆盖：
+
+- 扩展能被 Chromium 加载。
+- popup 能创建本地加密 vault。
+- ChatGPT 页面能注入右下角 `GPT` 浮动入口。
+- 工作区不可用页面会显示“切回个人账号”确认弹窗。
+
+如果本机缺 Playwright 浏览器，可先运行：
+
+```powershell
+npx playwright install chromium
+```
+
+真实账号 A/B 切换仍需要手动登录准备会话，自动测试不会保存密码、绕过 2FA、验证码或风控。
 
 ## 本地加载
 
@@ -33,6 +68,40 @@ npm run build
 2. 开启“开发者模式”。
 3. 选择“加载已解压的扩展”。
 4. 选择本项目的 `dist/` 目录。
+
+## GitHub 自动构建
+
+`.github/workflows/build.yml` 会在 `main` push、PR、手动触发和 `v*` tag 时运行：
+
+- `npm ci`
+- `npm test`
+- `npm run build`
+- `npm run package:zip`
+- 上传 `release/*.zip` 作为 workflow artifact
+- 如果触发来源是 `v*` tag，则自动创建/更新 GitHub Release 并上传 ZIP
+
+创建正式发布示例：
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Actions 完成后，GitHub Release 里会带可下载 ZIP。
+
+## 参考项目取舍
+
+参考过 [kieranchan/GPT-switcher](https://github.com/kieranchan/GPT-switcher)。可借鉴方向：
+
+- 发布形态：用 GitHub Release 分发 ZIP。
+- 产品体验：账号列表、标签/筛选、工作区信息、套餐徽章、导入导出。
+- 测试思路：用浏览器自动化覆盖 popup 主要交互。
+
+暂不直接采用的部分：
+
+- 它以 `__Secure-next-auth.session-token` 为核心保存账号；本项目保留“完整 cookie 快照 + 加密 vault”，更适合处理 ChatGPT/OpenAI 登录链路变化。
+- 它的导出数据偏明文账号 token；本项目导出加密 vault。
+- 它会从页面结构/接口推断 Team workspace 信息；本项目 v1 不依赖 ChatGPT 私有接口，只做工作区不可用检测和个人账号回退。
 
 ## 使用流程
 

@@ -1,5 +1,8 @@
 node_modules/
 dist/
+release/
 .vite/
 coverage/
+playwright-report/
+test-results/
 *.log
