@@ -1,8 +1,9 @@
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { OPENAI_WORKSPACE_MATCH_PATTERNS } from "../src/shared/constants";
 
-describe("manifest icons", () => {
+describe("manifest", () => {
   it("declares extension and action icons that exist on disk", () => {
     const manifest = JSON.parse(
       readFileSync(path.resolve("public", "manifest.json"), "utf8")
@@ -27,5 +28,23 @@ describe("manifest icons", () => {
       expect(png.readUInt32BE(16)).toBe(Number(size));
       expect(png.readUInt32BE(20)).toBe(Number(size));
     }
+  });
+
+  it("uses the same ChatGPT/OpenAI workspace matches everywhere", () => {
+    const manifest = JSON.parse(
+      readFileSync(path.resolve("public", "manifest.json"), "utf8")
+    ) as {
+      host_permissions: string[];
+      content_scripts: Array<{ matches: string[] }>;
+      web_accessible_resources: Array<{ matches: string[] }>;
+    };
+
+    expect(manifest.host_permissions).toEqual(OPENAI_WORKSPACE_MATCH_PATTERNS);
+    expect(manifest.content_scripts[0]?.matches).toEqual(
+      OPENAI_WORKSPACE_MATCH_PATTERNS
+    );
+    expect(manifest.web_accessible_resources[0]?.matches).toEqual(
+      OPENAI_WORKSPACE_MATCH_PATTERNS
+    );
   });
 });

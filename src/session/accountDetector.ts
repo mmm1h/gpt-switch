@@ -3,12 +3,8 @@ import {
   planLabelFor
 } from "../shared/profileHelpers";
 import { normalizeSubscriptionExpiry } from "../shared/jwtClaims";
+import { CHATGPT_TAB_PATTERNS } from "../shared/constants";
 import type { AccountMetadata, MetadataSource, PlanType } from "../shared/types";
-
-const CHATGPT_TAB_PATTERNS = [
-  "https://chatgpt.com/*",
-  "https://chat.openai.com/*"
-];
 
 export async function detectCurrentAccountMetadata(tabId?: number): Promise<AccountMetadata> {
   const targetTabId = tabId ?? (await getPrimaryChatGptTab())?.id;

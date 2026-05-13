@@ -32,7 +32,8 @@ import type {
 } from "./shared/types";
 import {
   CHATGPT_TAB_PATTERNS,
-  CURRENT_ACCOUNT_STATUS_CACHE_KEY
+  CURRENT_ACCOUNT_STATUS_CACHE_KEY,
+  isOpenAiWorkspaceUrl
 } from "./shared/constants";
 import {
   getStoredState,
@@ -56,7 +57,7 @@ let currentAccountStatusCache: InternalCurrentAccountStatusCache | null = null;
 let currentAccountStatusRefreshPromise: Promise<InternalCurrentAccountStatusCache> | null = null;
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status !== "complete" || !isChatGptUrl(tab.url)) {
+  if (changeInfo.status !== "complete" || !isOpenAiWorkspaceUrl(tab.url)) {
     return;
   }
 
@@ -142,19 +143,6 @@ async function preloadCurrentAccountStatusForTab(
     );
   } catch (error) {
     lastError = formatError(error);
-  }
-}
-
-function isChatGptUrl(value: string | undefined): boolean {
-  if (!value) {
-    return false;
-  }
-
-  try {
-    const url = new URL(value);
-    return url.hostname === "chatgpt.com" || url.hostname === "chat.openai.com";
-  } catch {
-    return false;
   }
 }
 

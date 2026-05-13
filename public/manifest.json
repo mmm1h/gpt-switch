@@ -33,7 +33,13 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://*.chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://*.openai.com/*",
+        "https://openai.com/*"
+      ],
       "js": ["content-script.js"],
       "run_at": "document_idle"
     }
@@ -41,7 +47,13 @@
   "web_accessible_resources": [
     {
       "resources": ["icons/*"],
-      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"]
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://*.chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://*.openai.com/*",
+        "https://openai.com/*"
+      ]
     }
   ]
 }

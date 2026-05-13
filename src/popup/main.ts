@@ -154,7 +154,7 @@ function renderCurrentAccountSection(current: PublicState | null): string {
         <div class="section-title">当前账号</div>
         <div class="detected-card">
           <div class="detected-title">等待页面预热</div>
-          <div class="subtle">${escapeHtml(current?.lastError || "没有读到账号缓存；请保持 ChatGPT 页面打开并刷新，或检查扩展的 chatgpt.com 站点权限。")}</div>
+          <div class="subtle">${escapeHtml(current?.lastError || "没有读到账号缓存；请保持 ChatGPT/OpenAI 页面打开并刷新，或检查扩展的站点权限。")}</div>
         </div>
       </section>
     `;
